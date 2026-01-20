@@ -9,6 +9,11 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "commands": [
+    "commands/reindex.md",
+    "commands/docs-status.md",
+    "commands/docs-search.md"
+  ],
   "hooks": {
     "Install": "hooks/install.ts",
     "SessionStart": "hooks/session-start.ts",

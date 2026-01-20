@@ -7,6 +7,8 @@ import {
   handleStatus,
   handleDeleteDocset,
   handleGetDocset,
+  handleRefresh,
+  handleRefreshAll,
 } from "./routes";
 import { handleCors, withCors, errorResponse, notFoundResponse } from "./middleware";
 
@@ -35,6 +37,12 @@ export async function routeRequest(req: Request): Promise<Response> {
     }
     else if (path === "/status" && method === "GET") {
       response = await handleStatus(url);
+    }
+    else if (path === "/refresh" && method === "POST") {
+      response = await handleRefresh(req);
+    }
+    else if (path === "/refresh-all" && method === "POST") {
+      response = await handleRefreshAll(req);
     }
     else if (path.startsWith("/docset/")) {
       const docsetId = path.slice("/docset/".length);
