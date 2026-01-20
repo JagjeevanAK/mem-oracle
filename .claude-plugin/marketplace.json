@@ -1,0 +1,14 @@
+{
+  "name": "mem-oracle",
+  "description": "Documentation indexer plugins for Claude Code",
+  "version": "1.0.0",
+  "plugins": [
+    {
+      "name": "mem-oracle",
+      "description": "Index documentation sites and auto-inject relevant snippets into prompts",
+      "version": "1.0.0",
+      "path": ".",
+      "manifest": "manifest.json"
+    }
+  ]
+}
