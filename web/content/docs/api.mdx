@@ -1,0 +1,241 @@
+---
+title: API Reference
+description: HTTP API endpoints for the worker service.
+---
+
+# API Reference
+
+The worker service exposes HTTP endpoints for indexing and retrieving documentation.
+
+## Base URL
+
+```text title="Base URL"
+http://127.0.0.1:7432
+```
+
+---
+
+## Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/index` | Index a documentation site |
+| `POST` | `/retrieve` | Search for relevant snippets |
+| `GET` | `/status` | Get indexing status |
+| `DELETE` | `/docset/:id` | Delete a docset |
+| `GET` | `/health` | Health check |
+
+---
+
+## POST /index
+
+Index a documentation website.
+
+### Request
+
+```json title="Request Body"
+{
+  "baseUrl": "https://nextjs.org",
+  "seedSlug": "/docs/getting-started",
+  "name": "Next.js Docs",
+  "waitForSeed": true
+}
+```
+
+### Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `baseUrl` | string | Yes | Base URL of the documentation site |
+| `seedSlug` | string | Yes | Starting path to begin crawling |
+| `name` | string | No | Custom name for the docset |
+| `waitForSeed` | boolean | No | Wait for seed page to be indexed before returning |
+
+### Response
+
+```json title="Response"
+{
+  "docsetId": "abc123",
+  "status": "indexing",
+  "seedPageIndexed": true,
+  "message": "Indexing started. Background crawling in progress."
+}
+```
+
+### Example
+
+```bash title="Terminal"
+curl -X POST http://localhost:7432/index \
+  -H "Content-Type: application/json" \
+  -d '{
+    "baseUrl": "https://nextjs.org",
+    "seedSlug": "/docs/getting-started",
+    "name": "Next.js Docs",
+    "waitForSeed": true
+  }'
+```
+
+---
+
+## POST /retrieve
+
+Search for relevant documentation snippets.
+
+### Request
+
+```json title="Request Body"
+{
+  "query": "how to use server components",
+  "topK": 5,
+  "minScore": 0.5,
+  "docsetIds": ["abc123"]
+}
+```
+
+### Parameters
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `query` | string | Yes | - | Search query |
+| `topK` | number | No | `5` | Number of results |
+| `minScore` | number | No | `0.5` | Minimum similarity score |
+| `docsetIds` | string[] | No | All | Filter by specific docsets |
+
+### Response
+
+```json title="Response"
+{
+  "query": "how to use server components",
+  "results": [
+    {
+      "content": "Server Components allow you to write UI that can be rendered...",
+      "url": "https://nextjs.org/docs/app/building-your-application/rendering/server-components",
+      "title": "Server Components",
+      "score": 0.89,
+      "docsetId": "abc123",
+      "docsetName": "Next.js Docs"
+    }
+  ],
+  "totalResults": 5
+}
+```
+
+### Example
+
+```bash title="Terminal"
+curl -X POST http://localhost:7432/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "how to use server components",
+    "topK": 5
+  }'
+```
+
+---
+
+## GET /status
+
+Get the status of all indexed documentation.
+
+### Response
+
+```json title="Response"
+{
+  "docsets": [
+    {
+      "id": "abc123",
+      "name": "Next.js Docs",
+      "baseUrl": "https://nextjs.org",
+      "status": "complete",
+      "pages": {
+        "indexed": 245,
+        "pending": 0,
+        "failed": 2
+      },
+      "lastUpdated": "2024-01-15T10:30:00Z",
+      "createdAt": "2024-01-15T09:00:00Z"
+    }
+  ],
+  "totalDocsets": 1,
+  "totalPages": 245
+}
+```
+
+### Example
+
+```bash title="Terminal"
+curl http://localhost:7432/status
+```
+
+---
+
+## DELETE /docset/:id
+
+Delete a docset and all its indexed content.
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | string | The docset ID to delete |
+
+### Response
+
+```json title="Response"
+{
+  "success": true,
+  "message": "Docset deleted successfully",
+  "deletedPages": 245
+}
+```
+
+### Example
+
+```bash title="Terminal"
+curl -X DELETE http://localhost:7432/docset/abc123
+```
+
+---
+
+## GET /health
+
+Health check endpoint.
+
+### Response
+
+```json title="Response"
+{
+  "status": "ok",
+  "uptime": 3600,
+  "version": "1.0.0"
+}
+```
+
+### Example
+
+```bash title="Terminal"
+curl http://localhost:7432/health
+```
+
+---
+
+## Error Responses
+
+All endpoints return errors in this format:
+
+```json title="Error Response"
+{
+  "error": "Error message here",
+  "code": "ERROR_CODE",
+  "details": {}
+}
+```
+
+### Common Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `INVALID_REQUEST` | 400 | Invalid request parameters |
+| `NOT_FOUND` | 404 | Resource not found |
+| `ALREADY_EXISTS` | 409 | Docset already being indexed |
+| `INTERNAL_ERROR` | 500 | Internal server error |

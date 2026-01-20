@@ -1,0 +1,107 @@
+---
+title: Getting Started
+description: Get up and running with mem-oracle in minutes.
+---
+
+# Getting Started
+
+Get mem-oracle up and running in your development environment in just a few minutes.
+
+## Prerequisites
+
+Before you begin, make sure you have:
+
+- **Bun** runtime installed ([install Bun](https://bun.sh))
+- **Node.js** 18.0.0 or higher
+- **Claude Code** or **OpenCode** with plugin support (for automatic integration)
+
+## Quick Start
+
+### Option 1: Claude Code Plugin (Recommended)
+
+The easiest way to get started is with the Claude Code plugin:
+
+```bash title="Terminal"
+# In Claude Code terminal:
+/plugin add jagjeevanak/mem-oracle
+```
+
+That's it! The plugin will:
+- Auto-install dependencies
+- Auto-start the worker service in the background
+- Auto-inject relevant documentation into your prompts
+
+### Option 2: Manual Installation
+
+For more control, you can install manually:
+
+```bash title="Terminal"
+# Clone and install
+git clone https://github.com/jagjeevanak/mem-oracle.git
+cd mem-oracle
+bun install
+
+# Start the worker service
+bun run worker
+```
+
+### Option 3: MCP Server
+
+Add to your Claude Code MCP configuration:
+
+```json title=".mcp.json"
+{
+  "mcpServers": {
+    "mem-oracle": {
+      "command": "bun",
+      "args": ["run", "/path/to/mem-oracle/src/index.ts", "mcp"]
+    }
+  }
+}
+```
+
+## Your First Index
+
+Once the worker is running, index your first documentation:
+
+```bash title="Terminal"
+# Index Next.js docs
+bun run src/index.ts index https://nextjs.org/docs/getting-started
+
+# Or via HTTP API
+curl -X POST http://localhost:7432/index \
+  -H "Content-Type: application/json" \
+  -d '{"baseUrl": "https://nextjs.org", "seedSlug": "/docs/getting-started"}'
+```
+
+## Searching Documentation
+
+Search your indexed documentation:
+
+```bash title="Terminal"
+# Via CLI
+bun run src/index.ts search "how to use server components"
+
+# Via HTTP API
+curl -X POST http://localhost:7432/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"query": "how to use server components", "topK": 5}'
+```
+
+## Check Status
+
+View the status of your indexed documentation:
+
+```bash title="Terminal"
+# Via CLI
+bun run src/index.ts status
+
+# Via HTTP API
+curl http://localhost:7432/status
+```
+
+## Next Steps
+
+- [Installation Guide](/docs/installation) - Detailed setup for different platforms
+- [Configuration](/docs/configuration) - Customize mem-oracle settings
+- [CLI Reference](/docs/cli) - All available commands

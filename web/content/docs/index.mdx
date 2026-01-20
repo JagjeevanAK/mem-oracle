@@ -1,0 +1,49 @@
+---
+title: Introduction
+description: A locally-running documentation oracle that indexes web docs and injects relevant snippets into your coding context.
+---
+
+# mem-oracle
+
+A locally-running documentation oracle that indexes web docs and injects relevant snippets into Claude Code context.
+
+## What is mem-oracle?
+
+mem-oracle is a tool that helps AI coding assistants like Claude Code access and use documentation more effectively. It crawls documentation websites, indexes their content locally, and automatically injects relevant documentation snippets into your coding conversations.
+
+## Key Features
+
+- **Seed-first indexing**: Index the seed page immediately, then continue background crawling
+- **Local storage**: SQLite metadata + disk-based vector store (no external dependencies)
+- **Pluggable embeddings**: Local TF-IDF fallback, or use OpenAI/Voyage/Cohere APIs
+- **Claude Code plugin**: Hook scripts that auto-inject relevant docs into prompts
+- **OpenCode plugin**: Full integration with OpenCode editor
+- **Optional MCP server**: Explicit tool calls for search/index operations
+
+## How It Works
+
+1. **Index Documentation**: Point mem-oracle at a documentation website (e.g., `https://nextjs.org/docs`)
+2. **Automatic Crawling**: The crawler fetches pages, extracts content, and creates searchable chunks
+3. **Vector Embeddings**: Content is converted to vectors for semantic search
+4. **Context Injection**: When you ask a question, relevant documentation is automatically injected into your prompt
+
+## Quick Example
+
+```bash title="CLI"
+# Index Next.js documentation
+curl -X POST http://localhost:7432/index \
+  -H "Content-Type: application/json" \
+  -d '{"baseUrl": "https://nextjs.org", "seedSlug": "/docs/getting-started"}'
+
+# Search for relevant documentation
+curl -X POST http://localhost:7432/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"query": "how to use server components", "topK": 5}'
+```
+
+## Next Steps
+
+- [Getting Started](/docs/getting-started) - Quick setup guide
+- [Installation](/docs/installation) - Detailed installation instructions
+- [Configuration](/docs/configuration) - Configure mem-oracle to your needs
+- [API Reference](/docs/api) - Complete API documentation

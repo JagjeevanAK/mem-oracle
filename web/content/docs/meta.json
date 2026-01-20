@@ -1,0 +1,17 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "getting-started",
+    "---Installation---",
+    "installation",
+    "---Usage---",
+    "cli",
+    "api",
+    "mcp",
+    "---Reference---",
+    "configuration",
+    "architecture",
+    "troubleshooting"
+  ]
+}

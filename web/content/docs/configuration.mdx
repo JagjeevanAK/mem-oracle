@@ -1,0 +1,246 @@
+---
+title: Configuration
+description: Configure mem-oracle settings and embedding providers.
+---
+
+# Configuration
+
+mem-oracle is highly configurable to suit your needs. Configuration is stored in `~/.mem-oracle/config.json`.
+
+## Default Configuration
+
+```json title="config.json"
+{
+  "dataDir": "~/.mem-oracle",
+  "embedding": {
+    "provider": "local",
+    "model": "all-MiniLM-L6-v2",
+    "batchSize": 32
+  },
+  "vectorStore": {
+    "provider": "local"
+  },
+  "worker": {
+    "port": 7432,
+    "host": "127.0.0.1"
+  },
+  "crawler": {
+    "concurrency": 3,
+    "requestDelay": 500,
+    "timeout": 30000,
+    "maxPages": 1000
+  }
+}
+```
+
+---
+
+## Configuration Options
+
+### Data Directory
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `dataDir` | `~/.mem-oracle` | Directory for storing all data |
+
+The data directory contains:
+```text title="Directory Structure"
+~/.mem-oracle/
+├── cache/          # Fetched page cache
+├── vectors/        # Vector embeddings
+├── metadata.db     # SQLite database
+├── worker.pid      # Worker process ID
+└── worker.log      # Worker logs
+```
+
+---
+
+### Embedding Providers
+
+#### Local (Default)
+
+Uses TF-IDF for embeddings. No API key required.
+
+```json title="Local Embeddings"
+{
+  "embedding": {
+    "provider": "local",
+    "model": "all-MiniLM-L6-v2",
+    "batchSize": 32
+  }
+}
+```
+
+#### OpenAI
+
+```json title="OpenAI Embeddings"
+{
+  "embedding": {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "apiKey": "sk-..."
+  }
+}
+```
+
+| Model | Dimensions | Cost |
+|-------|------------|------|
+| `text-embedding-3-small` | 1536 | $0.00002/1K tokens |
+| `text-embedding-3-large` | 3072 | $0.00013/1K tokens |
+| `text-embedding-ada-002` | 1536 | $0.0001/1K tokens |
+
+#### Voyage AI
+
+```json title="Voyage AI Embeddings"
+{
+  "embedding": {
+    "provider": "voyage",
+    "model": "voyage-2",
+    "apiKey": "..."
+  }
+}
+```
+
+| Model | Dimensions | Best For |
+|-------|------------|----------|
+| `voyage-2` | 1024 | General purpose |
+| `voyage-code-2` | 1536 | Code documentation |
+
+#### Cohere
+
+```json title="Cohere Embeddings"
+{
+  "embedding": {
+    "provider": "cohere",
+    "model": "embed-english-v3.0",
+    "apiKey": "..."
+  }
+}
+```
+
+---
+
+### Worker Settings
+
+```json title="Worker Config"
+{
+  "worker": {
+    "port": 7432,
+    "host": "127.0.0.1"
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `port` | `7432` | HTTP port for the worker |
+| `host` | `127.0.0.1` | Host to bind to |
+
+---
+
+### Crawler Settings
+
+```json title="Crawler Config"
+{
+  "crawler": {
+    "concurrency": 3,
+    "requestDelay": 500,
+    "timeout": 30000,
+    "maxPages": 1000
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `concurrency` | `3` | Number of concurrent requests |
+| `requestDelay` | `500` | Delay between requests (ms) |
+| `timeout` | `30000` | Request timeout (ms) |
+| `maxPages` | `1000` | Maximum pages per docset |
+
+---
+
+## Environment Variables
+
+You can also configure via environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `MEM_ORACLE_PORT` | Worker service port |
+| `MEM_ORACLE_DATA_DIR` | Data storage directory |
+| `MEM_ORACLE_TOP_K` | Default number of results |
+| `MEM_ORACLE_AUTO_INDEX` | Auto-index detected URLs |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `VOYAGE_API_KEY` | Voyage AI API key |
+| `COHERE_API_KEY` | Cohere API key |
+
+---
+
+## Plugin Configuration
+
+### Claude Code Plugin Settings
+
+Settings are configured via the plugin manifest:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `worker_port` | `7432` | Worker service port |
+| `top_k` | `5` | Number of snippets to retrieve |
+| `auto_index` | `true` | Auto-index detected doc URLs |
+| `min_score` | `0.5` | Minimum similarity score |
+
+### OpenCode Plugin Environment
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEM_ORACLE_PORT` | `7432` | Worker service port |
+| `MEM_ORACLE_DATA_DIR` | `~/.mem-oracle` | Data storage directory |
+| `MEM_ORACLE_TOP_K` | `5` | Number of snippets |
+| `MEM_ORACLE_AUTO_INDEX` | `true` | Auto-index URLs |
+
+---
+
+## Recommendations
+
+### For Local Development
+
+```json title="Local Development"
+{
+  "embedding": {
+    "provider": "local"
+  },
+  "crawler": {
+    "concurrency": 5,
+    "maxPages": 500
+  }
+}
+```
+
+### For Production Quality
+
+```json title="Production"
+{
+  "embedding": {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "apiKey": "sk-..."
+  },
+  "crawler": {
+    "concurrency": 3,
+    "requestDelay": 1000,
+    "maxPages": 2000
+  }
+}
+```
+
+### For Code Documentation
+
+```json title="Code Documentation"
+{
+  "embedding": {
+    "provider": "voyage",
+    "model": "voyage-code-2",
+    "apiKey": "..."
+  }
+}
+```

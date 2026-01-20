@@ -1,0 +1,175 @@
+---
+title: Installation
+description: Detailed installation instructions for Claude Code, OpenCode, and manual setup.
+---
+
+# Installation
+
+Choose the installation method that works best for your setup.
+
+## Claude Code Plugin
+
+The recommended way to use mem-oracle with Claude Code.
+
+### Via Plugin Marketplace
+
+```bash title="Terminal"
+# In Claude Code terminal:
+/plugin marketplace add jagjeevanak/mem-oracle
+/plugin install mem-oracle
+```
+
+Restart Claude Code after installation.
+
+### Manual Plugin Setup
+
+1. Clone the repository:
+```bash title="Terminal"
+git clone https://github.com/jagjeevanak/mem-oracle.git
+cd mem-oracle
+bun install
+```
+
+2. The plugin hooks in `.claude-plugin/hooks/` handle lifecycle events automatically.
+
+### Plugin Hooks
+
+The Claude Code plugin implements these lifecycle hooks:
+
+| Hook | Description |
+|------|-------------|
+| **Install** | Installs dependencies and sets up data directory |
+| **SessionStart** | Starts the worker service |
+| **UserPromptSubmit** | Retrieves relevant docs based on prompt |
+| **PreToolUse** | Pre-tool execution processing |
+| **PostToolUse** | Post-tool execution processing |
+| **SessionEnd** | Keeps worker alive for next session |
+
+---
+
+## OpenCode Plugin
+
+### Option 1: Copy to Project (Recommended)
+
+```bash title="Terminal"
+# From your project root
+mkdir -p .opencode/plugin .opencode/skills .opencode/command
+
+# Copy the plugin file
+cp /path/to/mem-oracle/.opencode/plugin/mem-oracle.ts .opencode/plugin/
+
+# Copy the skills
+cp -r /path/to/mem-oracle/.opencode/skills/docs-search .opencode/skills/
+
+# Copy the commands
+cp /path/to/mem-oracle/.opencode/command/*.md .opencode/command/
+```
+
+### Option 2: Global Installation
+
+```bash title="Terminal"
+mkdir -p ~/.config/opencode/plugin ~/.config/opencode/skills ~/.config/opencode/command
+
+# Copy plugin
+cp /path/to/mem-oracle/.opencode/plugin/mem-oracle.ts ~/.config/opencode/plugin/
+
+# Copy skills
+cp -r /path/to/mem-oracle/.opencode/skills/docs-search ~/.config/opencode/skills/
+
+# Copy commands
+cp /path/to/mem-oracle/.opencode/command/*.md ~/.config/opencode/command/
+```
+
+### Option 3: Clone and Symlink
+
+```bash title="Terminal"
+git clone https://github.com/jagjeevanak/mem-oracle.git ~/.mem-oracle-plugin
+
+# For project-level
+mkdir -p .opencode/plugin .opencode/skills .opencode/command
+ln -s ~/.mem-oracle-plugin/.opencode/plugin/mem-oracle.ts .opencode/plugin/
+ln -s ~/.mem-oracle-plugin/.opencode/skills/docs-search .opencode/skills/
+for f in ~/.mem-oracle-plugin/.opencode/command/*.md; do ln -s "$f" .opencode/command/; done
+```
+
+### OpenCode Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/reindex <url>` | Re-index a documentation site with fresh content |
+| `/docs-status` | Check status of all indexed documentation |
+| `/docs-search <query>` | Search through indexed documentation |
+| `/refresh-all` | Refresh all stale docsets (older than 24h) |
+
+---
+
+## Manual Installation
+
+For standalone usage without editor plugins.
+
+### Install from Source
+
+```bash title="Terminal"
+# Clone the repository
+git clone https://github.com/jagjeevanak/mem-oracle.git
+cd mem-oracle
+
+# Install dependencies
+bun install
+
+# Start the worker service (default: http://127.0.0.1:7432)
+bun run worker
+```
+
+### Using as MCP Server
+
+Start the MCP server for explicit tool calls:
+
+```bash title="Terminal"
+bun run src/index.ts mcp
+```
+
+Add to your MCP configuration:
+
+```json title=".mcp.json"
+{
+  "mcpServers": {
+    "mem-oracle": {
+      "command": "bun",
+      "args": ["run", "/path/to/mem-oracle/src/index.ts", "mcp"]
+    }
+  }
+}
+```
+
+### MCP Tools Available
+
+| Tool | Description |
+|------|-------------|
+| `search_docs` | Search indexed documentation |
+| `get_snippets` | Get specific documentation chunks |
+| `index_docs` | Index a documentation website |
+| `index_status` | Get indexing status |
+
+---
+
+## Requirements
+
+| Requirement | Version |
+|-------------|---------|
+| Bun | Latest |
+| Node.js | 18.0.0+ |
+| Claude Code | Latest with plugin support |
+| OpenCode | Latest with plugin support |
+
+## Verify Installation
+
+Check that everything is working:
+
+```bash title="Terminal"
+# Health check
+curl http://localhost:7432/health
+
+# Should return:
+# {"status":"ok","uptime":...}
+```

@@ -1,0 +1,166 @@
+---
+title: MCP Server
+description: Model Context Protocol server for explicit tool calls.
+---
+
+# MCP Server
+
+mem-oracle can run as an MCP (Model Context Protocol) server, providing explicit tools for documentation search and indexing.
+
+## Starting the MCP Server
+
+```bash title="Terminal"
+bun run src/index.ts mcp
+```
+
+The server uses stdio for communication, making it compatible with Claude Code and other MCP-enabled tools.
+
+## Configuration
+
+Add to your Claude Code MCP configuration (`.mcp.json` or settings):
+
+```json title=".mcp.json"
+{
+  "mcpServers": {
+    "mem-oracle": {
+      "command": "bun",
+      "args": ["run", "/path/to/mem-oracle/src/index.ts", "mcp"]
+    }
+  }
+}
+```
+
+---
+
+## Available Tools
+
+### search_docs
+
+Search through indexed documentation.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | Yes | The search query |
+| `topK` | number | No | Number of results (default: 5) |
+| `minScore` | number | No | Minimum similarity score (default: 0.5) |
+
+#### Example Usage
+
+```text title="Example"
+Use the search_docs tool to find information about server components
+```
+
+#### Response
+
+Returns an array of documentation snippets with:
+- `content`: The relevant documentation text
+- `url`: Source URL
+- `title`: Page title
+- `score`: Similarity score
+
+---
+
+### get_snippets
+
+Get specific documentation chunks by ID.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `chunkIds` | string[] | Yes | Array of chunk IDs to retrieve |
+
+#### Example Usage
+
+```text title="Example"
+Use get_snippets to retrieve chunks ["chunk_123", "chunk_456"]
+```
+
+---
+
+### index_docs
+
+Index a documentation website.
+
+#### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `url` | string | Yes | Full URL to index |
+| `name` | string | No | Custom name for the docset |
+| `waitForSeed` | boolean | No | Wait for seed page (default: true) |
+
+#### Example Usage
+
+```text title="Example"
+Use index_docs to index https://nextjs.org/docs/getting-started
+```
+
+#### Response
+
+Returns indexing status with:
+- `docsetId`: The created docset ID
+- `status`: Current indexing status
+- `message`: Status message
+
+---
+
+### index_status
+
+Get the status of all indexed documentation.
+
+#### Parameters
+
+None required.
+
+#### Example Usage
+
+```text title="Example"
+Use index_status to check what documentation is indexed
+```
+
+#### Response
+
+Returns status of all docsets with page counts and last update times.
+
+---
+
+## Integration Examples
+
+### With Claude Code
+
+Once configured, Claude will automatically have access to the tools:
+
+```text title="Example Conversation"
+Claude: I'll search the indexed documentation for information about routing.
+
+[Uses search_docs tool with query "routing"]
+
+Based on the documentation, here's how routing works...
+```
+
+### Automatic URL Detection
+
+When you mention documentation URLs in your prompts, the MCP server can automatically index them:
+
+```text title="Auto-Detection"
+How do I use the App Router? See https://nextjs.org/docs/app
+
+[Claude detects URL and uses index_docs tool]
+[Then uses search_docs to find relevant information]
+```
+
+---
+
+## MCP vs Worker API
+
+| Feature | MCP Server | Worker API |
+|---------|------------|------------|
+| Communication | stdio | HTTP |
+| Use case | Claude Code integration | Programmatic access |
+| Startup | On-demand | Background service |
+| Tools | search_docs, index_docs, etc. | REST endpoints |
+
+Use the MCP server when you want Claude to have direct tool access. Use the Worker API for programmatic access or when running as a background service.

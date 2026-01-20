@@ -1,0 +1,294 @@
+---
+title: Troubleshooting
+description: Common issues and solutions.
+---
+
+# Troubleshooting
+
+Solutions to common issues you might encounter with mem-oracle.
+
+## Worker Issues
+
+### Worker Not Starting
+
+**Symptoms**: Worker service doesn't start or crashes immediately.
+
+**Solutions**:
+
+1. Check if port is already in use:
+```bash title="Terminal"
+lsof -i :7432
+```
+
+2. Kill existing process:
+```bash title="Terminal"
+kill $(cat ~/.mem-oracle/worker.pid)
+```
+
+3. Start with a different port:
+```bash title="Terminal"
+bun run src/index.ts worker --port 8080
+```
+
+### Worker Not Responding
+
+**Symptoms**: Health check fails or requests timeout.
+
+**Check health**:
+```bash title="Terminal"
+curl http://localhost:7432/health
+```
+
+**View logs**:
+```bash title="Terminal"
+tail -f ~/.mem-oracle/worker.log
+```
+
+**Restart worker**:
+```bash title="Terminal"
+# Stop
+kill $(cat ~/.mem-oracle/worker.pid)
+
+# Start
+bun run worker
+```
+
+---
+
+## Indexing Issues
+
+### Indexing Stuck
+
+**Symptoms**: Status shows pages stuck in "pending" state.
+
+**Solutions**:
+
+1. Check crawler logs:
+```bash title="Terminal"
+tail -100 ~/.mem-oracle/worker.log | grep -i crawl
+```
+
+2. Verify the URL is accessible:
+```bash title="Terminal"
+curl -I https://example.com/docs
+```
+
+3. Force re-index:
+```bash title="Terminal"
+curl -X POST http://localhost:7432/index \
+  -H "Content-Type: application/json" \
+  -d '{"baseUrl": "https://example.com", "seedSlug": "/docs", "force": true}'
+```
+
+### Pages Failing to Index
+
+**Symptoms**: Many pages in "failed" status.
+
+**Common causes**:
+- Rate limiting by the target site
+- JavaScript-rendered content
+- Authentication required
+
+**Solutions**:
+
+1. Increase request delay:
+```json title="config.json"
+{
+  "crawler": {
+    "requestDelay": 2000
+  }
+}
+```
+
+2. Check failed pages:
+```bash title="Terminal"
+curl http://localhost:7432/status | jq '.docsets[].pages.failed'
+```
+
+### Content Not Extracted
+
+**Symptoms**: Pages indexed but no meaningful content.
+
+**Solutions**:
+
+1. The site may use JavaScript rendering. mem-oracle works best with static HTML or server-rendered pages.
+
+2. Check if the site has a sitemap or alternative documentation source.
+
+---
+
+## Search Issues
+
+### No Results Found
+
+**Symptoms**: Search returns empty results.
+
+**Solutions**:
+
+1. Verify documentation is indexed:
+```bash title="Terminal"
+curl http://localhost:7432/status
+```
+
+2. Try a broader query with lower score threshold:
+```bash title="Terminal"
+curl -X POST http://localhost:7432/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{"query": "getting started", "topK": 10, "minScore": 0.3}'
+```
+
+3. Check if the query matches indexed content topics.
+
+### Low Quality Results
+
+**Symptoms**: Results don't match the query well.
+
+**Solutions**:
+
+1. Use a better embedding provider:
+```json title="config.json"
+{
+  "embedding": {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "apiKey": "sk-..."
+  }
+}
+```
+
+2. Re-index after changing providers:
+```bash title="Terminal"
+# Delete existing docset
+curl -X DELETE http://localhost:7432/docset/{id}
+
+# Re-index
+curl -X POST http://localhost:7432/index ...
+```
+
+---
+
+## Plugin Issues
+
+### Claude Code Plugin Not Working
+
+**Symptoms**: Documentation not being injected into prompts.
+
+**Solutions**:
+
+1. Verify plugin is installed:
+```bash title="Terminal"
+/plugin list
+```
+
+2. Check worker is running:
+```bash title="Terminal"
+curl http://localhost:7432/health
+```
+
+3. Reinstall plugin:
+```bash title="Terminal"
+/plugin remove mem-oracle
+/plugin add jagjeevanak/mem-oracle
+```
+
+4. Restart Claude Code.
+
+### OpenCode Plugin Not Loading
+
+**Symptoms**: Plugin not recognized by OpenCode.
+
+**Solutions**:
+
+1. Verify files are in correct location:
+```bash title="Terminal"
+ls -la .opencode/plugin/
+ls -la .opencode/skills/
+ls -la .opencode/command/
+```
+
+2. Check file permissions:
+```bash title="Terminal"
+chmod +x .opencode/plugin/mem-oracle.ts
+```
+
+3. Restart OpenCode.
+
+---
+
+## Storage Issues
+
+### Disk Space
+
+**Symptoms**: Errors about disk space or storage.
+
+**Check usage**:
+```bash title="Terminal"
+du -sh ~/.mem-oracle/
+du -sh ~/.mem-oracle/cache/
+du -sh ~/.mem-oracle/vectors/
+```
+
+**Clean up**:
+```bash title="Terminal"
+# Remove old cache files
+find ~/.mem-oracle/cache -mtime +30 -delete
+
+# Or delete a specific docset
+curl -X DELETE http://localhost:7432/docset/{id}
+```
+
+### Database Corruption
+
+**Symptoms**: SQLite errors or inconsistent state.
+
+**Solutions**:
+
+1. Backup and rebuild:
+```bash title="Terminal"
+cp ~/.mem-oracle/metadata.db ~/.mem-oracle/metadata.db.backup
+rm ~/.mem-oracle/metadata.db
+# Worker will recreate on next start
+```
+
+2. Re-index your documentation.
+
+---
+
+## API Key Issues
+
+### OpenAI API Errors
+
+**Symptoms**: Embedding fails with authentication errors.
+
+**Solutions**:
+
+1. Verify API key:
+```bash title="Terminal"
+echo $OPENAI_API_KEY
+```
+
+2. Check config:
+```bash title="Terminal"
+cat ~/.mem-oracle/config.json | jq '.embedding'
+```
+
+3. Test API key directly:
+```bash title="Terminal"
+curl https://api.openai.com/v1/embeddings \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"input": "test", "model": "text-embedding-3-small"}'
+```
+
+---
+
+## Getting Help
+
+If you're still having issues:
+
+1. Check the [GitHub Issues](https://github.com/jagjeevanak/mem-oracle/issues)
+2. Search existing issues for similar problems
+3. Open a new issue with:
+   - Your configuration (without API keys)
+   - Relevant log output
+   - Steps to reproduce

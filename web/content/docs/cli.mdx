@@ -1,0 +1,172 @@
+---
+title: CLI Reference
+description: Command-line interface commands and options.
+---
+
+# CLI Reference
+
+mem-oracle provides a comprehensive CLI for managing documentation indexing.
+
+## Commands Overview
+
+```bash title="Usage"
+bun run src/index.ts <command> [options]
+```
+
+| Command | Description |
+|---------|-------------|
+| `worker` | Start the worker HTTP service |
+| `mcp` | Start the MCP server (stdio) |
+| `index` | Index a documentation URL |
+| `search` | Search indexed documentation |
+| `status` | Show indexing status |
+
+---
+
+## worker
+
+Start the worker HTTP service that handles indexing and retrieval.
+
+```bash title="Terminal"
+bun run src/index.ts worker
+```
+
+### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--port` | `7432` | Port to listen on |
+| `--host` | `127.0.0.1` | Host to bind to |
+
+### Example
+
+```bash title="Terminal"
+# Start on default port
+bun run src/index.ts worker
+
+# Start on custom port
+bun run src/index.ts worker --port 8080
+```
+
+---
+
+## mcp
+
+Start the MCP (Model Context Protocol) server for explicit tool calls.
+
+```bash title="Terminal"
+bun run src/index.ts mcp
+```
+
+This starts an MCP server using stdio for communication. Use this with Claude Code's MCP configuration.
+
+---
+
+## index
+
+Index a documentation website.
+
+```bash title="Terminal"
+bun run src/index.ts index <url>
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `url` | Yes | The documentation URL to index |
+
+### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--name` | Auto | Custom name for the docset |
+| `--max-pages` | `1000` | Maximum pages to crawl |
+| `--concurrency` | `3` | Number of concurrent requests |
+
+### Examples
+
+```bash title="Terminal"
+# Index Next.js docs
+bun run src/index.ts index https://nextjs.org/docs/getting-started
+
+# Index with custom name
+bun run src/index.ts index https://react.dev/learn --name "React Docs"
+
+# Limit crawl depth
+bun run src/index.ts index https://docs.python.org/3/ --max-pages 500
+```
+
+---
+
+## search
+
+Search through indexed documentation.
+
+```bash title="Terminal"
+bun run src/index.ts search <query>
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `query` | Yes | The search query |
+
+### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--top-k` | `5` | Number of results to return |
+| `--min-score` | `0.5` | Minimum similarity score |
+
+### Examples
+
+```bash title="Terminal"
+# Basic search
+bun run src/index.ts search "how to use server components"
+
+# Get more results
+bun run src/index.ts search "authentication" --top-k 10
+
+# Higher quality threshold
+bun run src/index.ts search "routing" --min-score 0.7
+```
+
+---
+
+## status
+
+Show the status of indexed documentation.
+
+```bash title="Terminal"
+bun run src/index.ts status
+```
+
+### Output
+
+```text title="Output"
+Docsets:
+  - Next.js Docs (nextjs.org)
+    Pages: 245 indexed, 12 pending, 0 failed
+    Last updated: 2024-01-15 10:30:00
+    
+  - React Docs (react.dev)
+    Pages: 89 indexed, 0 pending, 0 failed
+    Last updated: 2024-01-14 15:45:00
+```
+
+---
+
+## Development Commands
+
+```bash title="Terminal"
+# Run with hot reload
+bun run dev
+
+# Type check
+bun run typecheck
+
+# Run tests
+bun test
+```

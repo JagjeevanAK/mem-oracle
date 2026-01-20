@@ -1,0 +1,307 @@
+---
+title: Architecture
+description: System architecture and data flow diagrams.
+---
+
+# Architecture
+
+Understanding how mem-oracle works under the hood.
+
+## System Overview
+
+<Mermaid chart={`
+flowchart TB
+    subgraph Client["Client Layer"]
+        CC[Claude Code]
+        OC[OpenCode]
+        CLI[CLI]
+    end
+
+    subgraph Integration["Integration Layer"]
+        PH[Plugin Hooks]
+        MCP[MCP Server]
+    end
+
+    subgraph Service["Service Layer"]
+        WS[Worker Service<br/>:7432]
+        OR[Orchestrator]
+    end
+
+    subgraph Processing["Processing Pipeline"]
+        FE[Fetcher]
+        EX[Extractor]
+        CH[Chunker]
+        CR[Crawler]
+    end
+
+    subgraph Embedding["Embedding Layer"]
+        direction LR
+        LE[Local TF-IDF]
+        OE[OpenAI]
+        VE[Voyage]
+        CE[Cohere]
+    end
+
+    subgraph Storage["Storage Layer"]
+        SQL[(SQLite<br/>Metadata)]
+        VS[(Vector Store)]
+        CA[(Content Cache)]
+    end
+
+    CC --> PH
+    OC --> PH
+    CC -.-> MCP
+    CLI --> WS
+    PH --> WS
+    MCP --> OR
+    WS --> OR
+    OR --> FE
+    OR --> EX
+    OR --> CH
+    OR --> CR
+    FE --> CA
+    CR --> FE
+    EX --> CH
+    CH --> LE & OE & VE & CE
+    LE & OE & VE & CE --> VS
+    OR --> SQL
+    OR --> VS
+`} />
+
+---
+
+## Component Details
+
+### Client Layer
+
+- **Claude Code**: Primary integration via plugin hooks
+- **OpenCode**: Alternative editor integration
+- **CLI**: Direct command-line access
+
+### Integration Layer
+
+- **Plugin Hooks**: Lifecycle event handlers for automatic doc injection
+- **MCP Server**: Model Context Protocol for explicit tool calls
+
+### Service Layer
+
+- **Worker Service**: HTTP server handling all requests
+- **Orchestrator**: Coordinates indexing and retrieval operations
+
+### Processing Pipeline
+
+| Component | Responsibility |
+|-----------|---------------|
+| **Fetcher** | HTTP requests with caching and rate limiting |
+| **Extractor** | HTML/Markdown parsing, content extraction |
+| **Chunker** | Splits content into semantic chunks |
+| **Crawler** | Discovers and queues linked pages |
+
+### Embedding Layer
+
+| Provider | Type | Use Case |
+|----------|------|----------|
+| **Local** | TF-IDF | No API required, fast |
+| **OpenAI** | Neural | High quality, general purpose |
+| **Voyage** | Neural | Optimized for code |
+| **Cohere** | Neural | Multi-language support |
+
+### Storage Layer
+
+| Store | Purpose |
+|-------|---------|
+| **SQLite** | Docset and page metadata |
+| **Vector Store** | Embedding vectors (JSON files) |
+| **Content Cache** | Raw fetched content |
+
+---
+
+## Indexing Flow
+
+<Mermaid chart={`
+sequenceDiagram
+    participant U as User/Claude
+    participant W as Worker
+    participant O as Orchestrator
+    participant F as Fetcher
+    participant E as Extractor
+    participant C as Chunker
+    participant EM as Embedder
+    participant DB as SQLite
+    participant VS as VectorStore
+
+    U->>W: POST /index {baseUrl, seedSlug}
+    W->>O: indexDocset(input)
+    O->>DB: createDocset()
+    O->>DB: createPage(seedUrl)
+    
+    Note over O,VS: Seed Page Indexing (Synchronous)
+    O->>F: fetch(seedUrl)
+    F-->>O: HTML/MD content
+    O->>E: extract(content)
+    E-->>O: {title, text, links}
+    O->>C: chunk(extractedContent)
+    C-->>O: chunks[]
+    O->>EM: embed(chunks)
+    EM-->>O: vectors[]
+    O->>VS: upsert(vectors)
+    O->>DB: updatePage(indexed)
+
+    O-->>W: docset
+    W-->>U: {docsetId, status}
+
+    Note over O,VS: Background Crawling (Async)
+    loop For each discovered link
+        O->>DB: getNextPendingPage()
+        O->>F: fetch(pageUrl)
+        O->>E: extract()
+        O->>C: chunk()
+        O->>EM: embed()
+        O->>VS: upsert()
+        O->>DB: updatePage(indexed)
+    end
+`} />
+
+### Seed-First Strategy
+
+1. **Immediate**: Index the seed page synchronously
+2. **Background**: Crawl and index discovered pages asynchronously
+3. **Benefit**: Users get immediate results while full indexing continues
+
+---
+
+## Retrieval Flow
+
+<Mermaid chart={`
+sequenceDiagram
+    participant U as User/Claude
+    participant W as Worker
+    participant O as Orchestrator
+    participant EM as Embedder
+    participant VS as VectorStore
+    participant DB as SQLite
+
+    U->>W: POST /retrieve {query}
+    W->>O: search(query)
+    O->>EM: embedSingle(query)
+    EM-->>O: queryVector
+    
+    O->>DB: listDocsets()
+    DB-->>O: docsets[]
+    
+    loop For each docset
+        O->>VS: search(namespace, queryVector, topK)
+        VS-->>O: results[]
+    end
+    
+    O->>O: sort & merge results
+    O-->>W: SearchResult[]
+    W-->>U: {results, query}
+`} />
+
+---
+
+## Data Flow
+
+<Mermaid chart={`
+flowchart LR
+    subgraph Input
+        URL[Doc URL]
+    end
+
+    subgraph Fetch
+        HTTP[HTTP Request]
+        CACHE[Cache Check]
+    end
+
+    subgraph Extract
+        HTML[HTML Parser]
+        MD[MD Parser]
+        READ[Readability]
+    end
+
+    subgraph Process
+        CHUNK[Chunker]
+        EMBED[Embedder]
+    end
+
+    subgraph Store
+        META[Metadata<br/>SQLite]
+        VEC[Vectors<br/>JSON]
+        CONT[Content<br/>Cache]
+    end
+
+    URL --> CACHE
+    CACHE -->|miss| HTTP
+    CACHE -->|hit| Extract
+    HTTP --> CONT
+    HTTP --> Extract
+    HTML --> READ
+    MD --> Extract
+    READ --> CHUNK
+    CHUNK --> EMBED
+    EMBED --> VEC
+    CHUNK --> META
+`} />
+
+---
+
+## Data Models
+
+### Docset
+
+```typescript title="Docset"
+interface Docset {
+  id: string;
+  name: string;
+  baseUrl: string;
+  seedSlug: string;
+  status: 'indexing' | 'complete' | 'error';
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+### Page
+
+```typescript title="Page"
+interface Page {
+  id: string;
+  docsetId: string;
+  url: string;
+  title: string;
+  status: 'pending' | 'indexed' | 'failed';
+  contentHash: string;
+  indexedAt: Date;
+}
+```
+
+### Chunk
+
+```typescript title="Chunk"
+interface Chunk {
+  id: string;
+  pageId: string;
+  content: string;
+  startIndex: number;
+  endIndex: number;
+  embedding: number[];
+}
+```
+
+---
+
+## File Structure
+
+```text title="Directory Structure"
+~/.mem-oracle/
+├── config.json           # User configuration
+├── metadata.db           # SQLite database
+├── cache/                # Fetched content cache
+│   └── {hash}.html      
+├── vectors/              # Vector embeddings
+│   └── {docsetId}/
+│       └── {pageId}.json
+├── worker.pid            # Worker process ID
+└── worker.log            # Worker logs
+```
