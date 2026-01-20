@@ -89,18 +89,3 @@ export default async function Home() {
     </div>
   );
 }
-
-function FeatureCard({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="rounded-lg border border-fd-border bg-fd-card p-4 text-left">
-      <h3 className="mb-1 font-semibold text-fd-foreground">{title}</h3>
-      <p className="text-sm text-fd-muted-foreground">{description}</p>
-    </div>
-  );
-}

@@ -12,7 +12,46 @@
 
 .shell-prompt pre code::before,
 .shell-prompt code::before {
-  content: "$ ";
-  opacity: 0.6;
-  color: var(--fd-muted-foreground);
+  content: "$";
+  font-weight: 700;
+  font-size: 1.2em;
+  color: var(--fd-primary);
+}
+
+.shell-prompt pre {
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+.shell-prompt pre code {
+  padding-left: 8px;
+  padding-right: 8px;
+  display: block;
+  width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.shell-prompt span.line {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+@media (min-width: 640px) {
+  .shell-prompt pre code {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  
+  .shell-prompt pre code::before,
+  .shell-prompt code::before {
+    font-size: 1.35em;
+  }
+}
+
+@media (min-width: 1024px) {
+  .shell-prompt pre code::before,
+  .shell-prompt code::before {
+    font-size: 1.5em;
+  }
 }
