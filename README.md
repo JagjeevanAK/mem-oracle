@@ -144,10 +144,27 @@ Or Voyage AI:
 
 ## Claude Code Integration
 
-### As a Plugin (claude-mem style)
+### Install as Plugin
 
-1. Start the worker service: `bun run worker`
-2. The plugin hooks in `src/plugin/hooks.ts` can be integrated with Claude Code
+```bash
+# In Claude Code terminal
+> /plugin add jagjeevanak/mem-oracle
+> /plugin install mem-oracle
+```
+
+Then restart Claude Code. The plugin will automatically:
+- Check if the worker service is running on session start
+- Retrieve relevant docs when you submit prompts
+- Auto-index documentation URLs detected in your prompts
+
+### Manual Setup
+
+1. Start the worker service:
+```bash
+bun run worker
+```
+
+2. The plugin hooks in `.claude-plugin/hooks/` handle lifecycle events
 
 ### As MCP Server
 
@@ -244,34 +261,30 @@ sequenceDiagram
     O->>DB: createDocset()
     O->>DB: createPage(seedUrl)
     
-    rect rgb(240, 248, 255)
-        Note over O,VS: Seed Page Indexing (Synchronous)
-        O->>F: fetch(seedUrl)
-        F-->>O: HTML/MD content
-        O->>E: extract(content)
-        E-->>O: {title, text, links}
-        O->>C: chunk(extractedContent)
-        C-->>O: chunks[]
-        O->>EM: embed(chunks)
-        EM-->>O: vectors[]
-        O->>VS: upsert(vectors)
-        O->>DB: updatePage(indexed)
-    end
+    Note over O,VS: Seed Page Indexing (Synchronous)
+    O->>F: fetch(seedUrl)
+    F-->>O: HTML/MD content
+    O->>E: extract(content)
+    E-->>O: {title, text, links}
+    O->>C: chunk(extractedContent)
+    C-->>O: chunks[]
+    O->>EM: embed(chunks)
+    EM-->>O: vectors[]
+    O->>VS: upsert(vectors)
+    O->>DB: updatePage(indexed)
 
     O-->>W: docset
     W-->>U: {docsetId, status}
 
-    rect rgb(255, 248, 240)
-        Note over O,VS: Background Crawling (Async)
-        loop For each discovered link
-            O->>DB: getNextPendingPage()
-            O->>F: fetch(pageUrl)
-            O->>E: extract()
-            O->>C: chunk()
-            O->>EM: embed()
-            O->>VS: upsert()
-            O->>DB: updatePage(indexed)
-        end
+    Note over O,VS: Background Crawling (Async)
+    loop For each discovered link
+        O->>DB: getNextPendingPage()
+        O->>F: fetch(pageUrl)
+        O->>E: extract()
+        O->>C: chunk()
+        O->>EM: embed()
+        O->>VS: upsert()
+        O->>DB: updatePage(indexed)
     end
 ```
 
@@ -345,83 +358,6 @@ flowchart LR
     CHUNK --> EMBED
     EMBED --> VEC
     CHUNK --> META
-    
-    style META fill:#e1f5fe
-    style VEC fill:#fff3e0
-    style CONT fill:#e8f5e9
-```
-
-### Component Structure
-
-```mermaid
-classDiagram
-    class IndexerOrchestrator {
-        -metadataStore: SQLiteMetadataStore
-        -vectorStore: LocalVectorStore
-        -fetcher: HttpFetcher
-        -extractor: DocExtractor
-        -chunker: TextChunker
-        +indexDocset(input): DocsetRecord
-        +indexPage(docset, page): void
-        +search(query): SearchResult[]
-    }
-
-    class HttpFetcher {
-        -cache: ContentCache
-        -userAgent: string
-        +fetch(url, options): FetchResult
-    }
-
-    class DocExtractor {
-        +extract(content, url, type): ExtractedContent
-        -extractHtml(html, url): ExtractedContent
-        -extractMarkdown(md, url): ExtractedContent
-    }
-
-    class TextChunker {
-        +chunk(content, options): Chunk[]
-        -splitByHeadings(): Section[]
-        -splitBySentences(): Chunk[]
-    }
-
-    class EmbeddingProvider {
-        <<interface>>
-        +name: string
-        +dimensions: number
-        +embed(texts): number[][]
-        +embedSingle(text): number[]
-    }
-
-    class LocalEmbeddingProvider {
-        +embed(texts): number[][]
-    }
-
-    class OpenAIEmbeddingProvider {
-        -apiKey: string
-        +embed(texts): number[][]
-    }
-
-    class VectorStoreAdapter {
-        <<interface>>
-        +init(namespace): void
-        +upsert(namespace, vectors): void
-        +search(namespace, query, topK): SearchResult[]
-    }
-
-    class LocalVectorStore {
-        -indices: Map
-        +search(namespace, query, topK): SearchResult[]
-    }
-
-    IndexerOrchestrator --> HttpFetcher
-    IndexerOrchestrator --> DocExtractor
-    IndexerOrchestrator --> TextChunker
-    IndexerOrchestrator --> EmbeddingProvider
-    IndexerOrchestrator --> VectorStoreAdapter
-    
-    EmbeddingProvider <|.. LocalEmbeddingProvider
-    EmbeddingProvider <|.. OpenAIEmbeddingProvider
-    VectorStoreAdapter <|.. LocalVectorStore
 ```
 
 ## Development
