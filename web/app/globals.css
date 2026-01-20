@@ -9,3 +9,10 @@
 :root {
   --fd-layout-offset: 0px;
 }
+
+.shell-prompt pre code::before,
+.shell-prompt code::before {
+  content: "$ ";
+  opacity: 0.6;
+  color: var(--fd-muted-foreground);
+}

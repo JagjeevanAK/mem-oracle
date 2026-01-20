@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "mem-oracle",
+  title: "Mem-Oracle",
   description: "A locally-running documentation oracle that indexes web docs and injects relevant snippets into your coding context.",
 };
 
