@@ -11,7 +11,7 @@
     {
       "name": "mem-oracle",
       "version": "1.0.0",
-      "source": ".",
+      "source": "./plugin",
       "description": "Documentation indexer that auto-injects relevant doc snippets into Claude Code context"
     }
   ]
