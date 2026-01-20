@@ -1,11 +1,38 @@
 {
   "name": "mem-oracle",
+  "version": "1.0.0",
+  "description": "Documentation indexer and retrieval plugin for Claude Code",
   "module": "src/index.ts",
   "type": "module",
+  "bin": {
+    "mem-oracle": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "worker": "bun run src/index.ts worker",
+    "mcp": "bun run src/index.ts mcp",
+    "dev": "bun --hot run src/worker/server.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "linkedom": "^0.18.12"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5"
-  }
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "documentation",
+    "indexer",
+    "rag",
+    "retrieval",
+    "claude",
+    "mcp",
+    "embeddings"
+  ],
+  "license": "MIT"
 }
