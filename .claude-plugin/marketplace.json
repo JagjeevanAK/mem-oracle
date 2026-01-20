@@ -1,18 +1,18 @@
 {
-  "name": "mem-oracle",
+  "name": "jagjeevanak",
   "owner": {
-    "name": "jagjeevanak",
-    "github": "https://github.com/jagjeevanak"
+    "name": "Jagjeevan Kashid"
+  },
+  "metadata": {
+    "description": "Plugins by Jagjeevan Kashid",
+    "homepage": "https://github.com/jagjeevanak/mem-oracle"
   },
   "plugins": [
     {
       "name": "mem-oracle",
-      "description": "Documentation indexer that auto-injects relevant doc snippets into Claude Code context",
       "version": "1.0.0",
-      "source": {
-        "type": "local",
-        "path": "."
-      }
+      "source": ".",
+      "description": "Documentation indexer that auto-injects relevant doc snippets into Claude Code context"
     }
   ]
 }
