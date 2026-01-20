@@ -10,10 +10,11 @@
     "node": ">=18.0.0"
   },
   "hooks": {
+    "Install": ".claude-plugin/hooks/install.ts",
+    "SessionStart": ".claude-plugin/hooks/session-start.ts",
+    "UserPromptSubmit": ".claude-plugin/hooks/user-prompt-submit.ts",
     "PreToolUse": ".claude-plugin/hooks/pre-tool-use.ts",
     "PostToolUse": ".claude-plugin/hooks/post-tool-use.ts",
-    "UserPromptSubmit": ".claude-plugin/hooks/user-prompt-submit.ts",
-    "SessionStart": ".claude-plugin/hooks/session-start.ts",
     "SessionEnd": ".claude-plugin/hooks/session-end.ts"
   },
   "settings": {

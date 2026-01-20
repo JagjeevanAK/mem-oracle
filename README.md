@@ -12,8 +12,24 @@ A locally-running documentation oracle that indexes web docs and injects relevan
 
 ## Quick Start
 
+### Claude Code Plugin (Recommended)
+
 ```bash
-# Install dependencies
+# In Claude Code terminal:
+/plugin add jagjeevanak/mem-oracle
+```
+
+That's it! The plugin will:
+- Auto-install dependencies
+- Auto-start the worker service in the background
+- Auto-inject relevant documentation into your prompts
+
+### Manual Installation
+
+```bash
+# Clone and install
+git clone https://github.com/jagjeevanak/mem-oracle.git
+cd mem-oracle
 bun install
 
 # Start the worker service

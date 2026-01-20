@@ -1,22 +1,9 @@
 #!/usr/bin/env bun
-// Session end hook - cleanup or persistence tasks
-
-interface HookInput {
-  session_id?: string;
-}
-
-interface HookOutput {
-  // No modifications needed for session-end
-}
+// Session end hook - worker keeps running for next session
 
 async function main() {
-  const input: HookInput = JSON.parse(await Bun.stdin.text());
-  const output: HookOutput = {};
-
-  // Currently no session-end actions needed
-  // Future: could save session context or trigger background tasks
-
-  console.log(JSON.stringify(output));
+  // Worker stays alive between sessions for faster startup
+  // To stop it manually: kill $(cat ~/.mem-oracle/worker.pid)
 }
 
 main().catch(console.error);
