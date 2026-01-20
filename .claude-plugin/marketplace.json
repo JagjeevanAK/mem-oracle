@@ -1,14 +1,14 @@
 {
-  "name": "mem-oracle",
-  "description": "Documentation indexer plugins for Claude Code",
-  "version": "1.0.0",
+  "owner": {
+    "name": "jagjeevanak",
+    "github": "https://github.com/jagjeevanak"
+  },
   "plugins": [
     {
       "name": "mem-oracle",
-      "description": "Index documentation sites and auto-inject relevant snippets into prompts",
+      "description": "Documentation indexer that auto-injects relevant doc snippets into Claude Code context",
       "version": "1.0.0",
-      "path": ".",
-      "manifest": "manifest.json"
+      "source": "."
     }
   ]
 }
