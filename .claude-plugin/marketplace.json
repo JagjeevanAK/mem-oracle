@@ -1,4 +1,5 @@
 {
+  "name": "mem-oracle",
   "owner": {
     "name": "jagjeevanak",
     "github": "https://github.com/jagjeevanak"
@@ -8,7 +9,10 @@
       "name": "mem-oracle",
       "description": "Documentation indexer that auto-injects relevant doc snippets into Claude Code context",
       "version": "1.0.0",
-      "source": "."
+      "source": {
+        "type": "local",
+        "path": "."
+      }
     }
   ]
 }
