@@ -21,6 +21,7 @@
 .shell-prompt pre {
   min-width: 0 !important;
   width: 100% !important;
+  overflow-x: auto;
 }
 
 .shell-prompt pre code {

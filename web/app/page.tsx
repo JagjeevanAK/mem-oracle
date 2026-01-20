@@ -13,12 +13,12 @@ export default async function Home() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-fd-background">
-      <main className="flex max-w-3xl flex-col items-center gap-8 px-6 py-16 text-center">
-        <div className="flex flex-col items-center gap-4">
-          <h1 className="text-4xl font-bold tracking-tight text-fd-foreground sm:text-5xl">
+      <main className="flex w-full max-w-3xl min-w-0 flex-col items-center gap-6 px-4 py-10 text-center sm:gap-8 sm:px-6 sm:py-16">
+        <div className="flex flex-col items-center gap-3 sm:gap-4">
+          <h1 className="text-3xl font-bold tracking-tight text-fd-foreground sm:text-5xl">
             Mem-Oracle
           </h1>
-          <p className="max-w-xl text-lg text-fd-muted-foreground">
+          <p className="max-w-xl text-base text-fd-muted-foreground sm:text-lg">
             A locally-running documentation oracle that indexes web docs and
             injects relevant snippets into your coding context.
           </p>
@@ -45,10 +45,10 @@ export default async function Home() {
           </div>
         </div> */}
 
-        <div className="flex flex-col gap-4 sm:flex-row">
+        <div className="flex w-full flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <Link
             href="/docs"
-            className="group inline-flex h-11 items-center justify-center gap-1 rounded-md bg-fd-primary px-6 text-sm font-medium text-fd-primary-foreground transition-all hover:bg-fd-primary/90"
+            className="group inline-flex h-11 w-full max-w-[250px] items-center justify-center gap-1 rounded-md bg-fd-primary px-6 text-sm font-medium text-fd-primary-foreground transition-all hover:bg-fd-primary/90 sm:w-[250px]"
           >
             Get Started
             <svg
@@ -67,7 +67,7 @@ export default async function Home() {
             href="https://github.com/jagjeevanak/mem-oracle"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-fd-border px-6 text-sm font-medium text-fd-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground"
+            className="inline-flex h-11 w-full max-w-[250px] items-center justify-center gap-2 rounded-md border border-fd-border px-6 text-sm font-medium text-fd-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground sm:w-[250px]"
           >
             <svg
               viewBox="0 0 24 24"
@@ -80,7 +80,7 @@ export default async function Home() {
           </Link>
         </div>
 
-        <div className="mt-8 w-full max-w-xl text-left shell-prompt">
+        <div className="mt-6 w-full max-w-full text-left shell-prompt sm:mt-8 sm:max-w-xl">
           <CodeBlock title="Quick Install (Claude Code)">
             <Pre>{installCode}</Pre>
           </CodeBlock>
