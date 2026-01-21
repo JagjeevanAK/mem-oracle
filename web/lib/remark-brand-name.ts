@@ -1,11 +1,10 @@
-import { defineDocs, defineConfig } from "fumadocs-mdx/config";
 import { visit } from "unist-util-visit";
 
 function isBoundaryChar(ch: string | undefined) {
   return ch === undefined || !/[A-Za-z0-9]/.test(ch);
 }
 
-function remarkBrandName() {
+export default function remarkBrandName() {
   return (tree: unknown) => {
     visit(tree as any, "text", (node: any, index: number | undefined, parent: any) => {
       if (!parent || typeof index !== "number") return;
@@ -37,6 +36,8 @@ function remarkBrandName() {
         const before = value.slice(cursor, next);
         if (before) parts.push({ type: "text", value: before });
 
+        // Insert JSX spans instead of a BrandName component so we
+        // don't rely on a global BrandName symbol in compiled MDX.
         parts.push({
           type: "mdxJsxTextElement",
           name: "span",
@@ -78,19 +79,3 @@ function remarkBrandName() {
   };
 }
 
-export const docs = defineDocs({
-  dir: "content/docs",
-});
-
-export default defineConfig({
-  mdxOptions: {
-    remarkPlugins: [remarkBrandName],
-    rehypePlugins: [],
-    rehypeCodeOptions: {
-      themes: {
-        light: "github-light",
-        dark: "vesper",
-      },
-    },
-  },
-});

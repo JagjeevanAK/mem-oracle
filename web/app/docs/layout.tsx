@@ -7,7 +7,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     <DocsLayout
       tree={source.pageTree}
       nav={{
-        title: 'Mem-Oracle',
+        title: <span className="font-claude">Mem- <span className="fd-orange">Oracle</span></span>,
       }}
       sidebar={{
         defaultOpenLevel: 1,

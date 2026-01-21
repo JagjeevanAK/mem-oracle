@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CodeBlock, Pre } from "fumadocs-ui/components/codeblock";
 import { highlight } from "fumadocs-core/highlight";
+import { BrandName } from "@/components/brand-name";
 
 export default async function Home() {
   const installCode = await highlight(
@@ -12,11 +13,11 @@ export default async function Home() {
   );
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-fd-background">
+    <div className="fd-dotted-bg flex min-h-screen flex-col items-center justify-center bg-fd-background">
       <main className="flex w-full max-w-3xl min-w-0 flex-col items-center gap-6 px-4 py-10 text-center sm:gap-8 sm:px-6 sm:py-16">
         <div className="flex flex-col items-center gap-3 sm:gap-4">
-          <h1 className="text-3xl font-bold tracking-tight text-fd-foreground sm:text-5xl">
-            Mem-Oracle
+          <h1 className="font-claude text-3xl font-bold tracking-tight text-fd-foreground sm:text-5xl">
+            <BrandName />
           </h1>
           <p className="max-w-xl text-base text-fd-muted-foreground sm:text-lg">
             A locally-running documentation oracle that indexes web docs and
