@@ -100,6 +100,84 @@ async function installDependencies() {
   }
 }
 
+async function getIndexingStatus() {
+  try {
+    const response = await fetch(`${WORKER_URL}/status`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch {
+    // Status check failed
+  }
+  return null;
+}
+
+async function getActiveIndexingInfo() {
+  const status = await getIndexingStatus();
+  if (!status || !status.docsets) {
+    return { active: false, pending: 0, total: 0 };
+  }
+  
+  let totalPending = 0;
+  let totalPages = 0;
+  let hasActive = false;
+  
+  for (const docset of status.docsets) {
+    if (docset.status === "indexing" && docset.indexStatus) {
+      const { pendingPages = 0, totalPages: docTotal = 0 } = docset.indexStatus;
+      if (pendingPages > 0) {
+        hasActive = true;
+        totalPending += pendingPages;
+        totalPages += docTotal;
+      }
+    }
+  }
+  
+  return { active: hasActive, pending: totalPending, total: totalPages };
+}
+
+async function hasActivejobs() {
+  const info = await getActiveIndexingInfo();
+  return info.active;
+}
+
+async function waitForIndexingComplete(maxWaitMs = 30 * 60 * 1000) {
+  const startTime = Date.now();
+  const pollInterval = 10000; // 10 seconds
+  
+  while (Date.now() - startTime < maxWaitMs) {
+    const info = await getActiveIndexingInfo();
+    
+    if (!info.active) {
+      return true;
+    }
+    
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    console.error(`[mem-oracle] Waiting for indexing... ${info.pending} pages pending (${elapsed}s elapsed)`);
+    
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+  
+  console.error("[mem-oracle] Max wait time exceeded, indexing still in progress");
+  return false;
+}
+
+async function stopWorker() {
+  if (existsSync(PID_FILE)) {
+    const pid = readFileSync(PID_FILE, "utf-8").trim();
+    try {
+      process.kill(parseInt(pid), "SIGTERM");
+      writeFileSync(PID_FILE, "");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 async function main() {
   const command = process.argv[2] || "start";
 
@@ -133,14 +211,51 @@ async function main() {
       break;
 
     case "stop":
-      if (existsSync(PID_FILE)) {
-        const pid = readFileSync(PID_FILE, "utf-8").trim();
-        try {
-          process.kill(parseInt(pid), "SIGTERM");
+      if (await stopWorker()) {
+        console.error("[mem-oracle] Worker stopped");
+      } else {
+        console.error("[mem-oracle] Worker not running");
+      }
+      break;
+
+    case "stop-if-idle":
+      // Quick check - if no active jobs, stop immediately
+      if (!(await isWorkerRunning())) {
+        console.error("[mem-oracle] Worker not running");
+        return;
+      }
+
+      if (!(await hasActivejobs())) {
+        console.error("[mem-oracle] No active indexing, stopping worker...");
+        if (await stopWorker()) {
           console.error("[mem-oracle] Worker stopped");
-        } catch {
-          console.error("[mem-oracle] Worker not running");
         }
+        return;
+      }
+
+      // Indexing active - spawn background cleanup and exit immediately
+      console.error("[mem-oracle] Indexing in progress, spawning background cleanup...");
+      const cleanupScript = process.argv[1];
+      const child = spawn("bun", [cleanupScript, "stop-after-indexing"], {
+        detached: true,
+        stdio: "ignore",
+      });
+      child.unref();
+      console.error("[mem-oracle] Background cleanup started, Claude Code can exit");
+      break;
+
+    case "stop-after-indexing":
+      // Background process - wait for indexing then stop
+      if (!(await isWorkerRunning())) {
+        return;
+      }
+
+      console.error("[mem-oracle] Background: waiting for indexing to complete...");
+      const completed = await waitForIndexingComplete();
+      
+      if (completed) {
+        console.error("[mem-oracle] Background: indexing complete, stopping worker...");
+        await stopWorker();
       }
       break;
 

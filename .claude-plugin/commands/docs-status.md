@@ -1,30 +1,15 @@
----
-description: Check the status of indexed documentation
-allowed-tools:
-  - Bash
----
-
 # Documentation Status
 
 Check the status of all indexed documentation sets.
 
-## Execution
-
-```bash
-curl -s http://127.0.0.1:7432/status | jq .
-```
-
-If jq is not available, use:
+Run this command to check what documentation has been indexed:
 
 ```bash
 curl -s http://127.0.0.1:7432/status
 ```
 
-## Response Format
-
-Present the results in a readable format showing:
+Present the results showing:
 - Docset name and base URL
-- Total pages indexed
-- Pending/error pages
-- Last updated timestamp
+- Total pages indexed vs pending
 - Current status (ready/indexing/error)
+- Last updated timestamp

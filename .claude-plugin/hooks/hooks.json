@@ -23,6 +23,17 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/worker-service.js\" stop-if-idle",
+            "timeout": 1800
+          }
+        ]
+      }
     ]
   }
 }

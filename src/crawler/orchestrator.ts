@@ -290,6 +290,13 @@ export class IndexerOrchestrator {
   }
 
   /**
+   * Resume background crawling for a docset (called on worker restart)
+   */
+  resumeBackgroundCrawl(docsetId: string): void {
+    this.startBackgroundCrawl(docsetId);
+  }
+
+  /**
    * Stop background crawling for a docset
    */
   stopBackgroundCrawl(docsetId: string): void {

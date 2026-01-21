@@ -1,49 +1,17 @@
----
-description: Re-index a documentation site to fetch fresh content
-allowed-tools:
-  - Bash
----
-
 # Reindex Documentation
 
-Re-index a documentation site to fetch fresh content and update the vector store.
+Index or re-index a documentation URL.
 
-## Usage
-
-Provide the documentation URL to reindex:
-
-```
-/reindex https://nextjs.org/docs
-```
-
-Or specify a docset ID:
-
-```
-/reindex docset:abc123
-```
-
-## Execution
-
-Run this command to trigger re-indexing:
+If `$ARGUMENTS` contains a URL, extract the base URL and path, then run:
 
 ```bash
-curl -X POST http://127.0.0.1:7432/index \
+curl -s -X POST http://127.0.0.1:7432/index \
   -H "Content-Type: application/json" \
-  -d '{"baseUrl": "$1", "seedSlug": "/", "force": true}'
+  -d '{"baseUrl": "BASE_URL", "seedSlug": "PATH", "waitForSeed": true}'
 ```
 
-If user provided `docset:ID`, use:
+For example, for `https://nextjs.org/docs/app`:
+- baseUrl: `https://nextjs.org`
+- seedSlug: `/docs/app`
 
-```bash
-curl -X POST http://127.0.0.1:7432/refresh \
-  -H "Content-Type: application/json" \
-  -d '{"docsetId": "$1"}'
-```
-
-After triggering, check status with:
-
-```bash
-curl http://127.0.0.1:7432/status
-```
-
-Report the indexing progress to the user.
+Report the indexing status after the request completes.
