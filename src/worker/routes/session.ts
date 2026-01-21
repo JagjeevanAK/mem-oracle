@@ -18,21 +18,34 @@ const SESSIONS_FILE = join(DATA_DIR, "sessions.json");
 // In-memory session store
 const activeSessions = new Map<string, Session>();
 
+const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+function cleanupStaleSessions(): void {
+  const now = Date.now();
+  let removed = 0;
+  
+  for (const [id, session] of activeSessions.entries()) {
+    if (now - session.lastHeartbeat > STALE_THRESHOLD_MS) {
+      activeSessions.delete(id);
+      removed++;
+    }
+  }
+  
+  if (removed > 0) {
+    saveSessions();
+  }
+}
+
 // Load sessions from file on startup
 function loadSessions(): void {
   try {
     if (existsSync(SESSIONS_FILE)) {
       const data = JSON.parse(readFileSync(SESSIONS_FILE, "utf-8"));
       if (Array.isArray(data)) {
-        // Clean up stale sessions (older than 1 hour without heartbeat)
-        const now = Date.now();
-        const staleThreshold = 60 * 60 * 1000; // 1 hour
-        
         for (const session of data) {
-          if (now - session.lastHeartbeat < staleThreshold) {
-            activeSessions.set(session.id, session);
-          }
+          activeSessions.set(session.id, session);
         }
+        cleanupStaleSessions();
       }
     }
   } catch {
@@ -54,6 +67,7 @@ function saveSessions(): void {
 loadSessions();
 
 export function registerSession(sessionId: string, clientType: string): Session {
+  cleanupStaleSessions();
   const now = Date.now();
   const session: Session = {
     id: sessionId,
@@ -71,6 +85,7 @@ export function registerSession(sessionId: string, clientType: string): Session 
 }
 
 export function unregisterSession(sessionId: string): boolean {
+  cleanupStaleSessions();
   const existed = activeSessions.delete(sessionId);
   saveSessions();
   
@@ -80,10 +95,12 @@ export function unregisterSession(sessionId: string): boolean {
 }
 
 export function getActiveSessionCount(): number {
+  cleanupStaleSessions();
   return activeSessions.size;
 }
 
 export function getActiveSessions(): Session[] {
+  cleanupStaleSessions();
   return Array.from(activeSessions.values());
 }
 

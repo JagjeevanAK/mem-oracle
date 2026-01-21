@@ -17,15 +17,16 @@ const WORKER_URL = `http://127.0.0.1:${WORKER_PORT}`;
 const DATA_DIR = process.env.MEM_ORACLE_DATA_DIR || join(homedir(), ".mem-oracle");
 const PID_FILE = join(DATA_DIR, "worker.pid");
 const LOG_FILE = join(DATA_DIR, "worker.log");
-function getSessionIdFile(clientType) {
-  const sessionKey = process.env.CLAUDE_SESSION_KEY
-    || process.env.OPENCODE_SESSION
+function getSessionScopeKey() {
+  return process.env.CLAUDE_PLUGIN_ROOT
     || process.env.CLAUDE_PROJECT_ROOT
-    || process.env.CLAUDE_PLUGIN_ROOT
     || "global";
-  
+}
+
+function getSessionIdFile(clientType) {
+  const scopeKey = getSessionScopeKey();
   const hash = createHash("sha256")
-    .update(`${clientType}:${sessionKey}`)
+    .update(`${clientType}:${scopeKey}`)
     .digest("hex")
     .slice(0, 12);
   
@@ -34,15 +35,23 @@ function getSessionIdFile(clientType) {
 
 // Get or create a stable session ID for this client instance
 function getSessionId(clientType) {
-  // Prefer explicit session key if available
+  const sessionFile = getSessionIdFile(clientType);
+  
+  // Prefer explicit session key if available and persist it
   if (process.env.CLAUDE_SESSION_KEY) {
-    return `claude-${process.env.CLAUDE_SESSION_KEY}`;
+    const sessionId = `claude-${process.env.CLAUDE_SESSION_KEY}`;
+    try {
+      writeFileSync(sessionFile, sessionId);
+    } catch {}
+    return sessionId;
   }
   if (process.env.OPENCODE_SESSION) {
-    return `opencode-${process.env.OPENCODE_SESSION}`;
+    const sessionId = `opencode-${process.env.OPENCODE_SESSION}`;
+    try {
+      writeFileSync(sessionFile, sessionId);
+    } catch {}
+    return sessionId;
   }
-  
-  const sessionFile = getSessionIdFile(clientType);
   
   try {
     if (existsSync(sessionFile)) {
