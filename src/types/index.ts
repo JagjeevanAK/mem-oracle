@@ -118,6 +118,11 @@ export interface SearchResult {
   score: number;
 }
 
+export interface KeywordSearchResult extends SearchResult {
+  bm25: number;
+  keywordScore: number;
+}
+
 export interface Fetcher {
   fetch(url: string, options?: FetchOptions): Promise<FetchResult>;
 }
@@ -191,6 +196,12 @@ export interface MetadataStore {
   deleteChunks(pageId: string): Promise<void>;
   
   getIndexStatus(docsetId: string): Promise<IndexStatus>;
+
+  searchKeyword(
+    query: string,
+    docsetIds?: string[],
+    topK?: number
+  ): Promise<KeywordSearchResult[]>;
 }
 
 export interface IndexStatus {
@@ -218,6 +229,9 @@ export interface MemOracleConfig {
   
   /** Crawler config */
   crawler: CrawlerConfig;
+
+  /** Hybrid search config */
+  hybrid: HybridSearchConfig;
 }
 
 export interface EmbeddingConfig {
@@ -262,6 +276,19 @@ export interface CrawlerConfig {
   maxPages: number;
   /** User agent string */
   userAgent: string;
+}
+
+export interface HybridSearchConfig {
+  /** Enable hybrid search (keyword + vector) */
+  enabled: boolean;
+  /** Weight for vector score (0-1) */
+  alpha: number;
+  /** Vector search headroom */
+  vectorTopK?: number;
+  /** Keyword search headroom */
+  keywordTopK?: number;
+  /** Minimum keyword score to keep */
+  minKeywordScore?: number;
 }
 
 export interface IndexRequest {

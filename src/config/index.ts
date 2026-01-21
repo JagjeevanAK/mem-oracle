@@ -30,12 +30,21 @@ const DEFAULT_CRAWLER_CONFIG: CrawlerConfig = {
   userAgent: "mem-oracle/1.0 (docs indexer)",
 };
 
+const DEFAULT_HYBRID_CONFIG = {
+  enabled: true,
+  alpha: 0.65,
+  vectorTopK: 20,
+  keywordTopK: 20,
+  minKeywordScore: 0,
+};
+
 const DEFAULT_CONFIG: MemOracleConfig = {
   dataDir: DEFAULT_DATA_DIR,
   embedding: DEFAULT_EMBEDDING_CONFIG,
   vectorStore: DEFAULT_VECTOR_STORE_CONFIG,
   worker: DEFAULT_WORKER_CONFIG,
   crawler: DEFAULT_CRAWLER_CONFIG,
+  hybrid: DEFAULT_HYBRID_CONFIG,
 };
 
 let cachedConfig: MemOracleConfig | null = null;
@@ -79,6 +88,7 @@ function mergeConfig(defaults: MemOracleConfig, user: Partial<MemOracleConfig>):
     vectorStore: { ...defaults.vectorStore, ...user.vectorStore },
     worker: { ...defaults.worker, ...user.worker },
     crawler: { ...defaults.crawler, ...user.crawler },
+    hybrid: { ...defaults.hybrid, ...user.hybrid },
   };
 }
 

@@ -8,6 +8,7 @@ import type {
   EmbeddingVector,
   SearchQuery,
   SearchResult,
+  KeywordSearchResult,
 } from "../types";
 import { getMetadataStore, SQLiteMetadataStore } from "../storage/metadata";
 import { getVectorStore, LocalVectorStore } from "../storage/vector-store";
@@ -211,16 +212,56 @@ export class IndexerOrchestrator {
    * Search across indexed documents
    */
   async search(query: SearchQuery): Promise<SearchResult[]> {
+    const config = await loadConfig();
     const embeddingProvider = await this.getEmbeddingProvider();
     const queryVector = await embeddingProvider.embedSingle(query.query);
     
     const topK = query.topK ?? 10;
     const minScore = query.minScore ?? 0.5;
+    const vectorTopK = config.hybrid?.vectorTopK ?? Math.max(topK * 3, 20);
+    const keywordTopK = config.hybrid?.keywordTopK ?? Math.max(topK * 3, 20);
+    const alpha = config.hybrid?.alpha ?? 0.65;
+    const minKeywordScore = config.hybrid?.minKeywordScore ?? 0;
 
-    if (query.docsetIds && query.docsetIds.length > 0) {
+    const vectorResults = await this.searchVector(
+      queryVector,
+      query.docsetIds,
+      vectorTopK,
+      minScore
+    );
+
+    if (!config.hybrid?.enabled) {
+      return vectorResults.slice(0, topK);
+    }
+
+    const keywordResults = await this.metadataStore.searchKeyword(
+      query.query,
+      query.docsetIds,
+      keywordTopK
+    );
+
+    if (keywordResults.length === 0) {
+      return vectorResults.slice(0, topK);
+    }
+
+    return this.mergeHybridResults(
+      vectorResults,
+      keywordResults,
+      alpha,
+      minKeywordScore,
+      topK
+    );
+  }
+
+  private async searchVector(
+    queryVector: number[],
+    docsetIds: string[] | undefined,
+    topK: number,
+    minScore: number
+  ): Promise<SearchResult[]> {
+    if (docsetIds && docsetIds.length > 0) {
       const results: SearchResult[] = [];
-      
-      for (const docsetId of query.docsetIds) {
+      for (const docsetId of docsetIds) {
         const namespace = this.getNamespace(docsetId);
         const docsetResults = await this.vectorStore.search(
           namespace,
@@ -230,7 +271,6 @@ export class IndexerOrchestrator {
         );
         results.push(...docsetResults);
       }
-
       return results.sort((a, b) => b.score - a.score).slice(0, topK);
     }
 
@@ -249,6 +289,59 @@ export class IndexerOrchestrator {
     }
 
     return results.sort((a, b) => b.score - a.score).slice(0, topK);
+  }
+
+  private mergeHybridResults(
+    vectorResults: SearchResult[],
+    keywordResults: KeywordSearchResult[],
+    alpha: number,
+    minKeywordScore: number,
+    topK: number
+  ): SearchResult[] {
+    const resultsMap = new Map<
+      string,
+      { result: SearchResult; vectorScore: number; keywordScore: number }
+    >();
+
+    for (const result of vectorResults) {
+      resultsMap.set(result.chunkId, {
+        result,
+        vectorScore: result.score,
+        keywordScore: 0,
+      });
+    }
+
+    for (const keywordResult of keywordResults) {
+      if (keywordResult.keywordScore < minKeywordScore) continue;
+      const existing = resultsMap.get(keywordResult.chunkId);
+      if (existing) {
+        existing.keywordScore = Math.max(existing.keywordScore, keywordResult.keywordScore);
+      } else {
+        resultsMap.set(keywordResult.chunkId, {
+          result: {
+            chunkId: keywordResult.chunkId,
+            pageId: keywordResult.pageId,
+            docsetId: keywordResult.docsetId,
+            url: keywordResult.url,
+            title: keywordResult.title,
+            heading: keywordResult.heading,
+            content: keywordResult.content,
+            score: keywordResult.keywordScore,
+          },
+          vectorScore: 0,
+          keywordScore: keywordResult.keywordScore,
+        });
+      }
+    }
+
+    const merged = Array.from(resultsMap.values()).map(({ result, vectorScore, keywordScore }) => {
+      const safeKeywordScore = Math.max(0, Math.min(1, keywordScore));
+      const safeVectorScore = Math.max(0, Math.min(1, vectorScore));
+      const hybridScore = alpha * safeVectorScore + (1 - alpha) * safeKeywordScore;
+      return { ...result, score: hybridScore };
+    });
+
+    return merged.sort((a, b) => b.score - a.score).slice(0, topK);
   }
 
   private startBackgroundCrawl(docsetId: string): void {

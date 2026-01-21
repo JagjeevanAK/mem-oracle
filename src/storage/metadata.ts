@@ -10,6 +10,7 @@ import type {
   PageRecord,
   ChunkRecord,
   IndexStatus,
+  KeywordSearchResult,
 } from "../types";
 import { getDataDir } from "../config";
 
@@ -64,6 +65,27 @@ CREATE TABLE IF NOT EXISTS chunks (
 
 CREATE INDEX IF NOT EXISTS idx_chunks_page_id ON chunks(page_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_docset_id ON chunks(docset_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+  chunk_id UNINDEXED,
+  docset_id UNINDEXED,
+  page_id UNINDEXED,
+  url UNINDEXED,
+  title,
+  heading,
+  content,
+  tokenize = 'unicode61'
+);
+
+CREATE TABLE IF NOT EXISTS chunks_fts_meta (
+  chunk_id TEXT PRIMARY KEY,
+  docset_id TEXT NOT NULL,
+  page_id TEXT NOT NULL,
+  url TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_fts_meta_docset_id ON chunks_fts_meta(docset_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_fts_meta_page_id ON chunks_fts_meta(page_id);
 `;
 
 export class SQLiteMetadataStore implements MetadataStore {
@@ -75,6 +97,120 @@ export class SQLiteMetadataStore implements MetadataStore {
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec("PRAGMA foreign_keys = ON");
     this.db.exec(SCHEMA);
+  }
+
+  private buildFtsQuery(query: string): string {
+    const normalized = query
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .split(/\s+/)
+      .filter(word => word.length > 1);
+
+    if (normalized.length === 0) {
+      return query;
+    }
+
+    return normalized.map(word => `${word}*`).join(" ");
+  }
+
+  private getPageInfoMap(pageIds: string[]): Map<string, { url: string; title: string | null }> {
+    if (pageIds.length === 0) {
+      return new Map();
+    }
+
+    const placeholders = pageIds.map(() => "?").join(", ");
+    const stmt = this.db.prepare(
+      `SELECT id, url, title FROM pages WHERE id IN (${placeholders})`
+    );
+    const rows = stmt.all(...pageIds) as { id: string; url: string; title: string | null }[];
+    const map = new Map<string, { url: string; title: string | null }>();
+    for (const row of rows) {
+      map.set(row.id, { url: row.url, title: row.title });
+    }
+    return map;
+  }
+
+  private deleteFtsByChunkIds(chunkIds: string[]): void {
+    if (chunkIds.length === 0) return;
+    const deleteFts = this.db.prepare(`DELETE FROM chunks_fts WHERE chunk_id = ?`);
+    const deleteMeta = this.db.prepare(`DELETE FROM chunks_fts_meta WHERE chunk_id = ?`);
+    const tx = this.db.transaction((ids: string[]) => {
+      for (const id of ids) {
+        deleteFts.run(id);
+        deleteMeta.run(id);
+      }
+    });
+    tx(chunkIds);
+  }
+
+  private ensureFtsReady(): void {
+    const ftsCount = this.db.prepare(`SELECT COUNT(*) as count FROM chunks_fts_meta`).get() as { count: number };
+    if (ftsCount.count > 0) return;
+
+    const chunkCount = this.db.prepare(`SELECT COUNT(*) as count FROM chunks`).get() as { count: number };
+    if (chunkCount.count === 0) return;
+
+    this.rebuildFtsIndex();
+  }
+
+  private rebuildFtsIndex(): void {
+    interface FtsRebuildRow {
+      chunk_id: string;
+      docset_id: string;
+      page_id: string;
+      url: string;
+      title: string | null;
+      heading: string | null;
+      content: string;
+    }
+
+    const rows = this.db.prepare(`
+      SELECT 
+        chunks.id as chunk_id,
+        chunks.docset_id as docset_id,
+        chunks.page_id as page_id,
+        pages.url as url,
+        pages.title as title,
+        chunks.heading as heading,
+        chunks.content as content
+      FROM chunks
+      JOIN pages ON pages.id = chunks.page_id
+    `).all() as FtsRebuildRow[];
+
+    const clearFts = this.db.prepare(`DELETE FROM chunks_fts`);
+    const clearMeta = this.db.prepare(`DELETE FROM chunks_fts_meta`);
+    const ftsStmt = this.db.prepare(`
+      INSERT INTO chunks_fts (chunk_id, docset_id, page_id, url, title, heading, content)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const metaStmt = this.db.prepare(`
+      INSERT INTO chunks_fts_meta (chunk_id, docset_id, page_id, url)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    const tx = this.db.transaction((rows: FtsRebuildRow[]) => {
+      clearFts.run();
+      clearMeta.run();
+      for (const row of rows) {
+        ftsStmt.run(
+          row.chunk_id,
+          row.docset_id,
+          row.page_id,
+          row.url,
+          row.title,
+          row.heading,
+          row.content
+        );
+        metaStmt.run(
+          row.chunk_id,
+          row.docset_id,
+          row.page_id,
+          row.url
+        );
+      }
+    });
+
+    tx(rows);
   }
 
   async createDocset(input: DocsetInput): Promise<DocsetRecord> {
@@ -148,6 +284,11 @@ export class SQLiteMetadataStore implements MetadataStore {
   }
 
   async deleteDocset(id: string): Promise<void> {
+    const chunkRows = this.db.prepare(
+      `SELECT chunk_id FROM chunks_fts_meta WHERE docset_id = ?`
+    ).all(id) as { chunk_id: string }[];
+    this.deleteFtsByChunkIds(chunkRows.map(row => row.chunk_id));
+    this.db.prepare(`DELETE FROM chunks_fts_meta WHERE docset_id = ?`).run(id);
     const stmt = this.db.prepare(`DELETE FROM docsets WHERE id = ?`);
     stmt.run(id);
   }
@@ -248,6 +389,7 @@ export class SQLiteMetadataStore implements MetadataStore {
   }
 
   async deletePage(id: string): Promise<void> {
+    await this.deleteChunks(id);
     const stmt = this.db.prepare(`DELETE FROM pages WHERE id = ?`);
     stmt.run(id);
   }
@@ -255,15 +397,28 @@ export class SQLiteMetadataStore implements MetadataStore {
   async createChunks(chunks: Omit<ChunkRecord, "id" | "createdAt">[]): Promise<ChunkRecord[]> {
     const now = Date.now();
     const results: ChunkRecord[] = [];
+    const pageIds = Array.from(new Set(chunks.map(chunk => chunk.pageId)));
+    const pageInfoMap = this.getPageInfoMap(pageIds);
 
     const stmt = this.db.prepare(`
       INSERT INTO chunks (id, page_id, docset_id, content, heading, start_offset, end_offset, chunk_index, embedding_id, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    const ftsStmt = this.db.prepare(`
+      INSERT INTO chunks_fts (chunk_id, docset_id, page_id, url, title, heading, content)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const metaStmt = this.db.prepare(`
+      INSERT INTO chunks_fts_meta (chunk_id, docset_id, page_id, url)
+      VALUES (?, ?, ?, ?)
+    `);
+
     const insertMany = this.db.transaction((chunks: Omit<ChunkRecord, "id" | "createdAt">[]) => {
       for (const chunk of chunks) {
         const id = randomUUID();
+        const pageInfo = pageInfoMap.get(chunk.pageId);
         stmt.run(
           id,
           chunk.pageId,
@@ -275,6 +430,21 @@ export class SQLiteMetadataStore implements MetadataStore {
           chunk.chunkIndex,
           chunk.embeddingId,
           now
+        );
+        ftsStmt.run(
+          id,
+          chunk.docsetId,
+          chunk.pageId,
+          pageInfo?.url ?? "",
+          pageInfo?.title ?? null,
+          chunk.heading,
+          chunk.content
+        );
+        metaStmt.run(
+          id,
+          chunk.docsetId,
+          chunk.pageId,
+          pageInfo?.url ?? ""
         );
         results.push({ id, ...chunk, createdAt: now });
       }
@@ -313,6 +483,11 @@ export class SQLiteMetadataStore implements MetadataStore {
   }
 
   async deleteChunks(pageId: string): Promise<void> {
+    const chunkRows = this.db.prepare(
+      `SELECT chunk_id FROM chunks_fts_meta WHERE page_id = ?`
+    ).all(pageId) as { chunk_id: string }[];
+    this.deleteFtsByChunkIds(chunkRows.map(row => row.chunk_id));
+    this.db.prepare(`DELETE FROM chunks_fts_meta WHERE page_id = ?`).run(pageId);
     const stmt = this.db.prepare(`DELETE FROM chunks WHERE page_id = ?`);
     stmt.run(pageId);
   }
@@ -348,6 +523,73 @@ export class SQLiteMetadataStore implements MetadataStore {
       totalChunks: chunksResult.total,
       status: docset.status,
     };
+  }
+
+  async searchKeyword(
+    query: string,
+    docsetIds?: string[],
+    topK = 10
+  ): Promise<KeywordSearchResult[]> {
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+
+    this.ensureFtsReady();
+
+    const ftsQuery = this.buildFtsQuery(trimmed);
+    if (!ftsQuery) return [];
+
+    let sql = `
+      SELECT 
+        chunk_id as chunkId,
+        docset_id as docsetId,
+        page_id as pageId,
+        url,
+        title,
+        heading,
+        content,
+        bm25(chunks_fts) as bm25
+      FROM chunks_fts
+      WHERE chunks_fts MATCH ?
+    `;
+    const params: (string | number)[] = [ftsQuery];
+
+    if (docsetIds && docsetIds.length > 0) {
+      const placeholders = docsetIds.map(() => "?").join(", ");
+      sql += ` AND docset_id IN (${placeholders})`;
+      params.push(...docsetIds);
+    }
+
+    sql += ` ORDER BY bm25 ASC LIMIT ?`;
+    params.push(topK);
+
+    const stmt = this.db.prepare(sql);
+    const rows = stmt.all(...params) as {
+      chunkId: string;
+      docsetId: string;
+      pageId: string;
+      url: string;
+      title: string | null;
+      heading: string | null;
+      content: string;
+      bm25: number;
+    }[];
+
+    return rows.map(row => {
+      const adjustedBm25 = Math.max(0, row.bm25);
+      const keywordScore = 1 / (1 + adjustedBm25);
+      return {
+        chunkId: row.chunkId,
+        pageId: row.pageId,
+        docsetId: row.docsetId,
+        url: row.url,
+        title: row.title,
+        heading: row.heading,
+        content: row.content,
+        score: keywordScore,
+        keywordScore,
+        bm25: row.bm25,
+      };
+    });
   }
 
   private rowToDocset(row: DocsetRow): DocsetRecord {
