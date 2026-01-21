@@ -13,9 +13,10 @@
 .shell-prompt pre code::before,
 .shell-prompt code::before {
   content: "$";
-  font-weight: 700;
-  font-size: 1.2em;
-  color: var(--fd-primary);
+  font-weight: 500;
+  font-size: 0.95em;
+  color: inherit;
+  opacity: 0.6;
 }
 
 .shell-prompt pre {
@@ -55,4 +56,38 @@
   .shell-prompt code::before {
     font-size: 1.5em;
   }
+}
+
+.fd-dotted-bg {
+  background-size: 18px 18px;
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(0, 0, 0, 0.08) 1px,
+    transparent 0
+  );
+}
+
+.fd-orange {
+  color: #f97316;
+}
+
+.dark .fd-dotted-bg {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(255, 255, 255, 0.08) 1px,
+    transparent 0
+  );
+}
+
+.font-claude {
+  font-family: var(--font-claude);
+  font-weight: 600;
+}
+
+.brand-name {
+  text-decoration-color: #f97316;
+}
+
+a:has(.brand-name) {
+  text-decoration-color: #f97316;
 }
