@@ -1,6 +1,6 @@
 {
   "name": "mem-oracle",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Documentation indexer and retrieval plugin for Claude Code",
   "module": "src/index.ts",
   "type": "module",

@@ -1,9 +1,3 @@
 {
-  "mcpServers": {
-    "mem-oracle": {
-      "command": "bun",
-      "args": ["run", "src/index.ts", "mcp"],
-      "env": {}
-    }
-  }
+  "mcpServers": {}
 }
