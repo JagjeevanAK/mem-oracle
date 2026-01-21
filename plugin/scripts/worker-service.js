@@ -97,7 +97,7 @@ function getClientType() {
   if (process.env.OPENCODE_SESSION) {
     return "opencode";
   }
-  if (process.env.CLAUDE_SESSION_KEY || process.env.CLAUDE_PLUGIN_ROOT) {
+  if (process.env.CLAUDE_SESSION_KEY || process.env.CLAUDE_PLUGIN_ROOT || process.env.CLAUDE_PROJECT_ROOT) {
     return "claude-code";
   }
   return "unknown";
