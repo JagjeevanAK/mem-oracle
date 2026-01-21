@@ -1,4 +1,8 @@
-# Documentation Status
+---
+description: Check the status of indexed documentation
+allowed-tools:
+  - Bash
+---
 
 Check the status of all indexed documentation sets.
 

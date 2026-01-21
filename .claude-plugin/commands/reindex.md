@@ -1,4 +1,9 @@
-# Reindex Documentation
+---
+description: Index or re-index a documentation URL
+allowed-tools:
+  - Bash
+argument-hint: <documentation URL>
+---
 
 Index or re-index a documentation URL.
 
