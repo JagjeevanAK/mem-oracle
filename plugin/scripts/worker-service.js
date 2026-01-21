@@ -2,6 +2,7 @@
 /**
  * mem-oracle worker service management script
  * Called by Claude Code hooks to start/ensure worker is running
+ * Supports session tracking - worker only stops when ALL clients disconnect
  */
 
 import { spawn } from "child_process";
@@ -9,12 +10,52 @@ import { existsSync, openSync, writeFileSync, readFileSync } from "fs";
 import { mkdir } from "fs/promises";
 import { join, dirname } from "path";
 import { homedir } from "os";
+import { randomBytes } from "crypto";
 
 const WORKER_PORT = parseInt(process.env.MEM_ORACLE_PORT || "7432");
 const WORKER_URL = `http://127.0.0.1:${WORKER_PORT}`;
 const DATA_DIR = process.env.MEM_ORACLE_DATA_DIR || join(homedir(), ".mem-oracle");
 const PID_FILE = join(DATA_DIR, "worker.pid");
 const LOG_FILE = join(DATA_DIR, "worker.log");
+const SESSION_ID_FILE = join(DATA_DIR, "current-session.id");
+
+// Get or create a unique session ID for this client instance
+function getSessionId() {
+  // Try to use Claude session key if available
+  if (process.env.CLAUDE_SESSION_KEY) {
+    return `claude-${process.env.CLAUDE_SESSION_KEY}`;
+  }
+  
+  // For OpenCode or other clients, use/create a persistent session ID
+  // Store per-terminal to track multiple instances
+  const ppid = process.ppid || process.pid;
+  const sessionFile = join(DATA_DIR, `session-${ppid}.id`);
+  
+  try {
+    if (existsSync(sessionFile)) {
+      return readFileSync(sessionFile, "utf-8").trim();
+    }
+  } catch {}
+  
+  // Generate new session ID
+  const sessionId = `client-${randomBytes(8).toString("hex")}`;
+  try {
+    writeFileSync(sessionFile, sessionId);
+  } catch {}
+  
+  return sessionId;
+}
+
+// Detect client type
+function getClientType() {
+  if (process.env.CLAUDE_SESSION_KEY || process.env.CLAUDE_PLUGIN_ROOT) {
+    return "claude-code";
+  }
+  if (process.env.OPENCODE_SESSION) {
+    return "opencode";
+  }
+  return "unknown";
+}
 
 function getRepoRoot() {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
@@ -33,6 +74,57 @@ async function isWorkerRunning() {
   } catch {
     return false;
   }
+}
+
+async function registerSessionWithWorker(sessionId, clientType) {
+  try {
+    const response = await fetch(`${WORKER_URL}/session/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, clientType }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      console.error(`[mem-oracle] Session registered: ${sessionId} (total: ${data.totalSessions})`);
+      return data;
+    }
+  } catch (err) {
+    console.error(`[mem-oracle] Failed to register session: ${err.message}`);
+  }
+  return null;
+}
+
+async function unregisterSessionWithWorker(sessionId) {
+  try {
+    const response = await fetch(`${WORKER_URL}/session/unregister`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      console.error(`[mem-oracle] Session unregistered: ${sessionId} (remaining: ${data.remainingSessions})`);
+      return data;
+    }
+  } catch (err) {
+    console.error(`[mem-oracle] Failed to unregister session: ${err.message}`);
+  }
+  return null;
+}
+
+async function getActiveSessionCount() {
+  try {
+    const response = await fetch(`${WORKER_URL}/sessions`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return data.count || 0;
+    }
+  } catch {}
+  return 0;
 }
 
 async function ensureDataDir() {
@@ -185,23 +277,38 @@ async function main() {
     case "start":
       await installDependencies();
       
+      const sessionId = getSessionId();
+      const clientType = getClientType();
+      
       if (await isWorkerRunning()) {
         console.error("[mem-oracle] Worker already running");
+        // Register this session with existing worker
+        await registerSessionWithWorker(sessionId, clientType);
         return;
       }
 
       console.error("[mem-oracle] Starting worker service...");
       if (await startWorker()) {
         console.error("[mem-oracle] Worker started successfully on port " + WORKER_PORT);
+        // Register this session with the new worker
+        await registerSessionWithWorker(sessionId, clientType);
       } else {
         console.error("[mem-oracle] Failed to start worker. Check logs: " + LOG_FILE);
       }
       break;
 
     case "ensure":
+      const ensureSessionId = getSessionId();
+      const ensureClientType = getClientType();
+      
       if (!(await isWorkerRunning())) {
         console.error("[mem-oracle] Worker not running, starting...");
-        await startWorker();
+        if (await startWorker()) {
+          await registerSessionWithWorker(ensureSessionId, ensureClientType);
+        }
+      } else {
+        // Refresh session heartbeat
+        await registerSessionWithWorker(ensureSessionId, ensureClientType);
       }
       break;
 
@@ -219,14 +326,24 @@ async function main() {
       break;
 
     case "stop-if-idle":
-      // Quick check - if no active jobs, stop immediately
+      // Unregister this session and check if worker should stop
       if (!(await isWorkerRunning())) {
         console.error("[mem-oracle] Worker not running");
         return;
       }
 
+      const stopSessionId = getSessionId();
+      const unregisterResult = await unregisterSessionWithWorker(stopSessionId);
+      
+      // Check if other sessions are still connected
+      if (unregisterResult && unregisterResult.remainingSessions > 0) {
+        console.error(`[mem-oracle] ${unregisterResult.remainingSessions} other session(s) still active, keeping worker running`);
+        return;
+      }
+
+      // No other sessions - proceed with shutdown logic
       if (!(await hasActivejobs())) {
-        console.error("[mem-oracle] No active indexing, stopping worker...");
+        console.error("[mem-oracle] No active indexing and no other sessions, stopping worker...");
         if (await stopWorker()) {
           console.error("[mem-oracle] Worker stopped");
         }
@@ -245,7 +362,7 @@ async function main() {
       break;
 
     case "stop-after-indexing":
-      // Background process - wait for indexing then stop
+      // Background process - wait for indexing then stop (only if no sessions)
       if (!(await isWorkerRunning())) {
         return;
       }
@@ -254,7 +371,14 @@ async function main() {
       const completed = await waitForIndexingComplete();
       
       if (completed) {
-        console.error("[mem-oracle] Background: indexing complete, stopping worker...");
+        // Re-check if there are still active sessions before stopping
+        const remainingSessions = await getActiveSessionCount();
+        if (remainingSessions > 0) {
+          console.error(`[mem-oracle] Background: indexing complete but ${remainingSessions} session(s) still active, keeping worker running`);
+          return;
+        }
+        
+        console.error("[mem-oracle] Background: indexing complete and no active sessions, stopping worker...");
         await stopWorker();
       }
       break;

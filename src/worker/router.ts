@@ -9,6 +9,9 @@ import {
   handleGetDocset,
   handleRefresh,
   handleRefreshAll,
+  handleRegisterSession,
+  handleUnregisterSession,
+  handleGetSessions,
 } from "./routes";
 import { handleCors, withCors, errorResponse, notFoundResponse } from "./middleware";
 
@@ -56,6 +59,16 @@ export async function routeRequest(req: Request): Promise<Response> {
       else {
         response = notFoundResponse();
       }
+    }
+    // Session management routes
+    else if (path === "/session/register" && method === "POST") {
+      response = await handleRegisterSession(req);
+    }
+    else if (path === "/session/unregister" && method === "POST") {
+      response = await handleUnregisterSession(req);
+    }
+    else if (path === "/sessions" && method === "GET") {
+      response = handleGetSessions();
     }
     else {
       response = notFoundResponse();

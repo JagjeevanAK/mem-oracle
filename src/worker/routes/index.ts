@@ -6,3 +6,10 @@ export { handleRetrieve } from "./retrieve";
 export { handleStatus } from "./status";
 export { handleDeleteDocset, handleGetDocset } from "./docset";
 export { handleRefresh, handleRefreshAll } from "./refresh";
+export { 
+  handleRegisterSession, 
+  handleUnregisterSession, 
+  handleGetSessions,
+  hasActiveSessions,
+  getActiveSessionCount,
+} from "./session";
