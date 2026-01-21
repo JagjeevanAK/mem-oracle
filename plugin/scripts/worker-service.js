@@ -57,12 +57,96 @@ function getClientType() {
   return "unknown";
 }
 
+const REPO_URL = "https://github.com/JagjeevanAK/mem-oracle.git";
+const DEFAULT_REPO_DIR = join(DATA_DIR, "repo");
+
 function getRepoRoot() {
-  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
-  if (pluginRoot) {
-    return dirname(dirname(pluginRoot));
+  // 1. Check environment variable first
+  if (process.env.MEM_ORACLE_REPO_ROOT) {
+    return process.env.MEM_ORACLE_REPO_ROOT;
   }
-  return dirname(dirname(dirname(new URL(import.meta.url).pathname)));
+  
+  // 2. Check stored repo root in data dir
+  const repoRootFile = join(DATA_DIR, "repo-root.txt");
+  if (existsSync(repoRootFile)) {
+    const storedRoot = readFileSync(repoRootFile, "utf-8").trim();
+    if (existsSync(join(storedRoot, "src", "index.ts"))) {
+      return storedRoot;
+    }
+  }
+  
+  // 3. Check if repo exists in default location (~/.mem-oracle/repo)
+  if (existsSync(join(DEFAULT_REPO_DIR, "src", "index.ts"))) {
+    return DEFAULT_REPO_DIR;
+  }
+  
+  // 4. Check common development locations
+  const commonLocations = [
+    join(homedir(), "Developer", "mem-Oracle"),
+    join(homedir(), "Projects", "mem-Oracle"),
+    join(homedir(), "dev", "mem-oracle"),
+    join(homedir(), "code", "mem-oracle"),
+  ];
+  
+  for (const loc of commonLocations) {
+    if (existsSync(join(loc, "src", "index.ts"))) {
+      // Store for future use
+      try {
+        writeFileSync(repoRootFile, loc);
+      } catch {}
+      return loc;
+    }
+  }
+  
+  // 5. If script is running from actual repo (not plugin cache), use that
+  const scriptPath = new URL(import.meta.url).pathname;
+  if (!scriptPath.includes(".claude/plugins/cache")) {
+    const repoRoot = dirname(dirname(dirname(scriptPath)));
+    if (existsSync(join(repoRoot, "src", "index.ts"))) {
+      return repoRoot;
+    }
+  }
+  
+  // 6. Fallback - return null (will trigger auto-clone)
+  return null;
+}
+
+async function cloneRepository() {
+  console.error("[mem-oracle] Repository not found, cloning from GitHub...");
+  
+  try {
+    const { execSync } = await import("child_process");
+    
+    // Ensure data dir exists
+    await mkdir(DATA_DIR, { recursive: true });
+    
+    // Clone the repository
+    execSync(`git clone ${REPO_URL} "${DEFAULT_REPO_DIR}"`, {
+      stdio: "inherit",
+    });
+    
+    console.error("[mem-oracle] Repository cloned successfully");
+    return DEFAULT_REPO_DIR;
+  } catch (error) {
+    console.error("[mem-oracle] Failed to clone repository:", error.message);
+    console.error("[mem-oracle] Please manually clone:");
+    console.error(`  git clone ${REPO_URL} ~/.mem-oracle/repo`);
+    return null;
+  }
+}
+
+async function updateRepository() {
+  const repoRoot = getRepoRoot();
+  if (!repoRoot || repoRoot !== DEFAULT_REPO_DIR) {
+    return; // Only auto-update the default repo location
+  }
+  
+  try {
+    const { execSync } = await import("child_process");
+    execSync("git pull --ff-only", { cwd: repoRoot, stdio: "pipe" });
+  } catch {
+    // Ignore update errors - not critical
+  }
 }
 
 async function isWorkerRunning() {
@@ -134,11 +218,22 @@ async function ensureDataDir() {
 }
 
 async function startWorker() {
-  const repoRoot = getRepoRoot();
+  let repoRoot = getRepoRoot();
+  
+  // Auto-clone if repo not found
+  if (!repoRoot) {
+    repoRoot = await cloneRepository();
+    if (!repoRoot) {
+      return false;
+    }
+  }
+  
   const entryPoint = join(repoRoot, "src", "index.ts");
 
   if (!existsSync(entryPoint)) {
     console.error(`[mem-oracle] Entry point not found: ${entryPoint}`);
+    console.error(`[mem-oracle] Repository may be corrupted. Try removing and re-cloning:`);
+    console.error(`  rm -rf ~/.mem-oracle/repo && git clone ${REPO_URL} ~/.mem-oracle/repo`);
     return false;
   }
 
@@ -172,7 +267,16 @@ async function startWorker() {
 }
 
 async function installDependencies() {
-  const repoRoot = getRepoRoot();
+  let repoRoot = getRepoRoot();
+  
+  // Auto-clone if repo not found
+  if (!repoRoot) {
+    repoRoot = await cloneRepository();
+    if (!repoRoot) {
+      return false;
+    }
+  }
+  
   const nodeModules = join(repoRoot, "node_modules");
 
   if (existsSync(nodeModules)) {
