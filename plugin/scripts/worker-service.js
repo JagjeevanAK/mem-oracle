@@ -17,9 +17,25 @@ const WORKER_URL = `http://127.0.0.1:${WORKER_PORT}`;
 const DATA_DIR = process.env.MEM_ORACLE_DATA_DIR || join(homedir(), ".mem-oracle");
 const PID_FILE = join(DATA_DIR, "worker.pid");
 const LOG_FILE = join(DATA_DIR, "worker.log");
+
+function readSessionFile(sessionFile) {
+  try {
+    if (existsSync(sessionFile)) {
+      return readFileSync(sessionFile, "utf-8").trim();
+    }
+  } catch {}
+  return null;
+}
+
+function writeSessionFile(sessionFile, sessionId) {
+  try {
+    writeFileSync(sessionFile, sessionId);
+  } catch {}
+}
+
 function getSessionScopeKey() {
-  return process.env.CLAUDE_PLUGIN_ROOT
-    || process.env.CLAUDE_PROJECT_ROOT
+  return process.env.CLAUDE_PROJECT_ROOT
+    || process.env.CLAUDE_PLUGIN_ROOT
     || "global";
 }
 
@@ -33,37 +49,45 @@ function getSessionIdFile(clientType) {
   return join(DATA_DIR, `session-${clientType}-${hash}.id`);
 }
 
+function getLastSessionFile(clientType) {
+  return join(DATA_DIR, `session-${clientType}-last.id`);
+}
+
 // Get or create a stable session ID for this client instance
 function getSessionId(clientType) {
   const sessionFile = getSessionIdFile(clientType);
+  const lastSessionFile = getLastSessionFile(clientType);
   
   // Prefer explicit session key if available and persist it
   if (process.env.CLAUDE_SESSION_KEY) {
     const sessionId = `claude-${process.env.CLAUDE_SESSION_KEY}`;
-    try {
-      writeFileSync(sessionFile, sessionId);
-    } catch {}
+    writeSessionFile(sessionFile, sessionId);
+    writeSessionFile(lastSessionFile, sessionId);
     return sessionId;
   }
   if (process.env.OPENCODE_SESSION) {
     const sessionId = `opencode-${process.env.OPENCODE_SESSION}`;
-    try {
-      writeFileSync(sessionFile, sessionId);
-    } catch {}
+    writeSessionFile(sessionFile, sessionId);
+    writeSessionFile(lastSessionFile, sessionId);
     return sessionId;
   }
   
-  try {
-    if (existsSync(sessionFile)) {
-      return readFileSync(sessionFile, "utf-8").trim();
-    }
-  } catch {}
+  const existingSessionId = readSessionFile(sessionFile);
+  if (existingSessionId) {
+    writeSessionFile(lastSessionFile, existingSessionId);
+    return existingSessionId;
+  }
+
+  const lastSessionId = readSessionFile(lastSessionFile);
+  if (lastSessionId) {
+    writeSessionFile(sessionFile, lastSessionId);
+    return lastSessionId;
+  }
   
   // Generate new session ID
   const sessionId = `client-${randomBytes(8).toString("hex")}`;
-  try {
-    writeFileSync(sessionFile, sessionId);
-  } catch {}
+  writeSessionFile(sessionFile, sessionId);
+  writeSessionFile(lastSessionFile, sessionId);
   
   return sessionId;
 }

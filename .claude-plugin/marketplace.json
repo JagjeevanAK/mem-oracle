@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "mem-oracle",
-      "version": "1.5.1",
+      "version": "1.5.2",
       "source": "./plugin",
       "description": "Documentation indexer that auto-injects relevant doc snippets into Claude Code context"
     }
