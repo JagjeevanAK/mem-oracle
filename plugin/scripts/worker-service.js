@@ -10,26 +10,39 @@ import { existsSync, openSync, writeFileSync, readFileSync } from "fs";
 import { mkdir } from "fs/promises";
 import { join, dirname } from "path";
 import { homedir } from "os";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 
 const WORKER_PORT = parseInt(process.env.MEM_ORACLE_PORT || "7432");
 const WORKER_URL = `http://127.0.0.1:${WORKER_PORT}`;
 const DATA_DIR = process.env.MEM_ORACLE_DATA_DIR || join(homedir(), ".mem-oracle");
 const PID_FILE = join(DATA_DIR, "worker.pid");
 const LOG_FILE = join(DATA_DIR, "worker.log");
-const SESSION_ID_FILE = join(DATA_DIR, "current-session.id");
+function getSessionIdFile(clientType) {
+  const sessionKey = process.env.CLAUDE_SESSION_KEY
+    || process.env.OPENCODE_SESSION
+    || process.env.CLAUDE_PROJECT_ROOT
+    || process.env.CLAUDE_PLUGIN_ROOT
+    || "global";
+  
+  const hash = createHash("sha256")
+    .update(`${clientType}:${sessionKey}`)
+    .digest("hex")
+    .slice(0, 12);
+  
+  return join(DATA_DIR, `session-${clientType}-${hash}.id`);
+}
 
-// Get or create a unique session ID for this client instance
-function getSessionId() {
-  // Try to use Claude session key if available
+// Get or create a stable session ID for this client instance
+function getSessionId(clientType) {
+  // Prefer explicit session key if available
   if (process.env.CLAUDE_SESSION_KEY) {
     return `claude-${process.env.CLAUDE_SESSION_KEY}`;
   }
+  if (process.env.OPENCODE_SESSION) {
+    return `opencode-${process.env.OPENCODE_SESSION}`;
+  }
   
-  // For OpenCode or other clients, use/create a persistent session ID
-  // Store per-terminal to track multiple instances
-  const ppid = process.ppid || process.pid;
-  const sessionFile = join(DATA_DIR, `session-${ppid}.id`);
+  const sessionFile = getSessionIdFile(clientType);
   
   try {
     if (existsSync(sessionFile)) {
@@ -48,11 +61,11 @@ function getSessionId() {
 
 // Detect client type
 function getClientType() {
-  if (process.env.CLAUDE_SESSION_KEY || process.env.CLAUDE_PLUGIN_ROOT) {
-    return "claude-code";
-  }
   if (process.env.OPENCODE_SESSION) {
     return "opencode";
+  }
+  if (process.env.CLAUDE_SESSION_KEY || process.env.CLAUDE_PLUGIN_ROOT) {
+    return "claude-code";
   }
   return "unknown";
 }
@@ -381,8 +394,8 @@ async function main() {
     case "start":
       await installDependencies();
       
-      const sessionId = getSessionId();
       const clientType = getClientType();
+      const sessionId = getSessionId(clientType);
       
       if (await isWorkerRunning()) {
         console.error("[mem-oracle] Worker already running");
@@ -402,8 +415,8 @@ async function main() {
       break;
 
     case "ensure":
-      const ensureSessionId = getSessionId();
       const ensureClientType = getClientType();
+      const ensureSessionId = getSessionId(ensureClientType);
       
       if (!(await isWorkerRunning())) {
         console.error("[mem-oracle] Worker not running, starting...");
@@ -436,7 +449,8 @@ async function main() {
         return;
       }
 
-      const stopSessionId = getSessionId();
+      const stopClientType = getClientType();
+      const stopSessionId = getSessionId(stopClientType);
       const unregisterResult = await unregisterSessionWithWorker(stopSessionId);
       
       // Check if other sessions are still connected

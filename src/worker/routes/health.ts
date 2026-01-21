@@ -4,6 +4,6 @@ export function handleHealth(): Response {
   return Response.json({ 
     status: "ok", 
     timestamp: Date.now(),
-    version: "1.0.0",
+    version: "1.4.0",
   });
 }
