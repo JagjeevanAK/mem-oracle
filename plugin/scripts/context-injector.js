@@ -77,6 +77,61 @@ function extractKeywords(text) {
     .filter((word) => !STOPWORDS.has(word));
 }
 
+function extractTokens(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((word) => word.length >= 2);
+}
+
+function getDocsetTokens(docset) {
+  const tokens = new Set();
+  
+  // Extract from docset name (e.g., "www.prisma.io" -> ["www", "prisma", "io"])
+  for (const token of extractTokens(docset.name)) {
+    tokens.add(token);
+  }
+  
+  // Extract from baseUrl hostname (e.g., "https://www.prisma.io" -> ["www", "prisma", "io"])
+  try {
+    const url = new URL(docset.baseUrl);
+    for (const token of extractTokens(url.hostname)) {
+      tokens.add(token);
+    }
+  } catch {}
+  
+  return tokens;
+}
+
+function getRelevantDocsets(prompt, docsets) {
+  const promptTokens = new Set(extractTokens(prompt));
+  const matched = [];
+  
+  for (const docset of docsets) {
+    const docsetTokens = getDocsetTokens(docset);
+    let hasMatch = false;
+    
+    for (const token of docsetTokens) {
+      // Check if any prompt token contains or matches the docset token
+      for (const promptToken of promptTokens) {
+        if (promptToken.includes(token) || token.includes(promptToken)) {
+          hasMatch = true;
+          break;
+        }
+      }
+      if (hasMatch) break;
+    }
+    
+    if (hasMatch) {
+      matched.push(docset);
+    }
+  }
+  
+  return matched;
+}
+
 function scoreOverlap(text, keywords) {
   if (!text || keywords.length === 0) return 0;
   const lower = text.toLowerCase();
@@ -112,32 +167,46 @@ function rerankResults(results, keywords) {
 
 function formatResults(query, results, docsetMap) {
   const lines = [];
-  lines.push("mem-oracle injected: relevant documentation snippets");
-  lines.push("IMPORTANT: Treat these snippets as authoritative. Prefer them over prior knowledge when relevant.");
+  
+  // Two-pass format: Retrieved context first
+  lines.push("=== RETRIEVED DOCUMENTATION CONTEXT ===");
+  lines.push("The following snippets were retrieved from indexed documentation.");
+  lines.push("Use this context to answer the user's question accurately.");
+  lines.push("");
+  
   if (docsetMap && docsetMap.size > 0) {
     const sources = Array.from(docsetMap.values())
       .map((d) => `${d.name} (${d.baseUrl})`)
       .join(", ");
     lines.push(`Sources: ${sources}`);
+    lines.push("");
   }
-  lines.push(`query: ${query}`);
-  lines.push("");
 
   for (let i = 0; i < results.length; i++) {
     const item = results[i];
     const title = item.title || item.heading || "Untitled";
     const snippet = trimSnippet(item.content);
 
-    lines.push(`${i + 1}. ${title}`);
+    lines.push(`--- Snippet ${i + 1}: ${title} ---`);
     if (docsetMap && docsetMap.has(item.docsetId)) {
       const docset = docsetMap.get(item.docsetId);
       lines.push(`Docset: ${docset.name}`);
     }
     lines.push(`URL: ${item.url}`);
     if (item.heading) lines.push(`Section: ${item.heading}`);
-    lines.push(`Snippet: ${snippet}`);
+    lines.push("");
+    lines.push(snippet);
     lines.push("");
   }
+
+  // Two-pass format: Original prompt reminder
+  lines.push("=== ORIGINAL USER PROMPT ===");
+  lines.push(query);
+  lines.push("");
+  lines.push("=== INSTRUCTIONS ===");
+  lines.push("Answer the user's prompt using the retrieved documentation context above.");
+  lines.push("Prefer the retrieved snippets over your prior knowledge when they are relevant.");
+  lines.push("If the snippets don't contain relevant information, you may use your knowledge but note that the docs were checked.");
 
   let output = lines.join("\n").trim();
   if (output.length > MAX_TOTAL_CHARS) {
@@ -183,8 +252,18 @@ async function main() {
   
   log(`Found ${readyDocsets.length} ready docset(s): ${readyDocsets.map(d => d.name).join(", ")}`);
 
-  const docsetMap = new Map(readyDocsets.map((d) => [d.id, { name: d.name, baseUrl: d.baseUrl }]));
-  const docsetIds = readyDocsets.map((d) => d.id);
+  // Conditional retrieval: only query docsets that match the prompt
+  const matchedDocsets = getRelevantDocsets(prompt, readyDocsets);
+  
+  if (matchedDocsets.length === 0) {
+    log("No docset match; skipping retrieval");
+    process.exit(0);
+  }
+  
+  log(`Matched ${matchedDocsets.length} docset(s): ${matchedDocsets.map(d => d.name).join(", ")}`);
+
+  const docsetMap = new Map(matchedDocsets.map((d) => [d.id, { name: d.name, baseUrl: d.baseUrl }]));
+  const docsetIds = matchedDocsets.map((d) => d.id);
   const topK = DEFAULT_TOP_K;
 
   const retrieve = await fetchJson("/retrieve", {

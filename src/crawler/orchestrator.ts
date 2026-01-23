@@ -264,7 +264,9 @@ export class IndexerOrchestrator {
     
     // Apply guardrails with runtime clamping
     const topK = clamp(query.topK ?? 10, 1, 100);
-    const minScore = clamp(query.minScore ?? 0.5, 0, 1);
+    const requestedMinScore = query.minScore;
+    const defaultMinScore = config.embedding.provider === "local" ? 0.15 : 0.5;
+    const minScore = clamp(requestedMinScore ?? defaultMinScore, 0, 1);
     const vectorTopK = clamp(config.hybrid?.vectorTopK ?? Math.max(topK * 3, 20), 1, 1000);
     const keywordTopK = clamp(config.hybrid?.keywordTopK ?? Math.max(topK * 3, 20), 1, 1000);
     const alpha = clamp(config.hybrid?.alpha ?? 0.65, 0, 1);
@@ -276,12 +278,20 @@ export class IndexerOrchestrator {
     const formatSnippets = query.formatSnippets ?? config.retrieval.formatSnippets;
     const snippetMaxChars = config.retrieval.snippetMaxChars;
 
-    const vectorResults = await this.searchVector(
+    let vectorResults = await this.searchVector(
       queryVector,
       query.docsetIds,
       vectorTopK,
       minScore
     );
+    if (vectorResults.length === 0 && requestedMinScore === undefined && minScore > 0) {
+      vectorResults = await this.searchVector(
+        queryVector,
+        query.docsetIds,
+        vectorTopK,
+        0
+      );
+    }
 
     let mergedResults: SearchResult[];
 
