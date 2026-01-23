@@ -79,7 +79,7 @@ curl -X POST http://localhost:7432/index \
 
 ## POST /retrieve
 
-Search for relevant documentation snippets.
+Search for relevant documentation snippets with diversity filtering and character budget control.
 
 ### Request
 
@@ -87,8 +87,10 @@ Search for relevant documentation snippets.
 {
   "query": "how to use server components",
   "topK": 5,
-  "minScore": 0.5,
-  "docsetIds": ["abc123"]
+  "docsetIds": ["abc123"],
+  "maxChunksPerPage": 2,
+  "maxTotalChars": 16000,
+  "formatSnippets": true
 }
 ```
 
@@ -97,9 +99,11 @@ Search for relevant documentation snippets.
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `query` | string | Yes | - | Search query |
-| `topK` | number | No | `5` | Number of results |
-| `minScore` | number | No | `0.5` | Minimum similarity score |
+| `topK` | number | No | `5` | Number of results (clamped 1-100) |
 | `docsetIds` | string[] | No | All | Filter by specific docsets |
+| `maxChunksPerPage` | number | No | `3` | Max chunks from same page (diversity) |
+| `maxTotalChars` | number | No | `32000` | Total character budget for results |
+| `formatSnippets` | boolean | No | `true` | Include formatted snippets |
 
 ### Response
 
@@ -108,17 +112,49 @@ Search for relevant documentation snippets.
   "query": "how to use server components",
   "results": [
     {
+      "chunkId": "chunk-123",
+      "pageId": "page-456",
+      "docsetId": "abc123",
       "content": "Server Components allow you to write UI that can be rendered...",
       "url": "https://nextjs.org/docs/app/building-your-application/rendering/server-components",
       "title": "Server Components",
+      "heading": "Introduction",
       "score": 0.89,
-      "docsetId": "abc123",
-      "docsetName": "Next.js Docs"
+      "snippet": {
+        "formatted": "## Server Components\nSource: https://nextjs.org/docs/.../server-components\nSection: Rendering > Server Components > Introduction\n\nServer Components allow you to write UI that can be rendered...",
+        "title": "Server Components",
+        "url": "https://nextjs.org/docs/app/building-your-application/rendering/server-components",
+        "breadcrumb": "Rendering > Server Components > Introduction",
+        "content": "Server Components allow you to write UI that can be rendered...",
+        "charCount": 245
+      }
     }
   ],
-  "totalResults": 5
+  "totalChars": 1250,
+  "truncated": false
 }
 ```
+
+### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `results` | array | Array of search results with optional snippets |
+| `totalChars` | number | Total characters across all results |
+| `truncated` | boolean | Whether results were truncated due to budget |
+
+### Snippet Object
+
+When `formatSnippets` is enabled, each result includes a `snippet` object:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `formatted` | string | Ready-to-use formatted text for context injection |
+| `title` | string | Page title |
+| `url` | string | Source URL |
+| `breadcrumb` | string | Heading path (e.g., "Api > Auth > OAuth") |
+| `content` | string | The content text (may be truncated) |
+| `charCount` | number | Character count of formatted snippet |
 
 ### Example
 
@@ -127,7 +163,40 @@ curl -X POST http://localhost:7432/retrieve \
   -H "Content-Type: application/json" \
   -d '{
     "query": "how to use server components",
-    "topK": 5
+    "topK": 5,
+    "maxChunksPerPage": 2,
+    "maxTotalChars": 16000,
+    "formatSnippets": true
+  }'
+```
+
+### Diversity Filtering
+
+The `maxChunksPerPage` parameter prevents results from being dominated by chunks from a single page:
+
+```bash title="Diverse Results"
+# Get at most 2 chunks from each page
+curl -X POST http://localhost:7432/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "authentication",
+    "topK": 10,
+    "maxChunksPerPage": 2
+  }'
+```
+
+### Character Budget
+
+Control the total size of returned content for predictable context injection:
+
+```bash title="Limited Budget"
+# Limit total response to ~8000 characters
+curl -X POST http://localhost:7432/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "getting started",
+    "topK": 10,
+    "maxTotalChars": 8000
   }'
 ```
 

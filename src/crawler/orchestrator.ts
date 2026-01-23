@@ -9,6 +9,10 @@ import type {
   SearchQuery,
   SearchResult,
   KeywordSearchResult,
+  StuckPageInfo,
+  EnhancedSearchResult,
+  FormattedSnippet,
+  RetrievalConfig,
 } from "../types";
 import { getMetadataStore, SQLiteMetadataStore } from "../storage/metadata";
 import { getVectorStore, LocalVectorStore } from "../storage/vector-store";
@@ -92,6 +96,8 @@ export class IndexerOrchestrator {
         errorMessage: null,
         etag: null,
         lastModified: null,
+        retryCount: 0,
+        lastAttemptAt: null,
       });
     }
 
@@ -109,22 +115,45 @@ export class IndexerOrchestrator {
     const namespace = this.getNamespace(docset.id);
 
     try {
-      await this.metadataStore.updatePage(page.id, { status: "fetching" });
+      await this.metadataStore.updatePage(page.id, { 
+        status: "fetching",
+        lastAttemptAt: Date.now(),
+      });
 
       const fetchResult = await this.fetcher.fetch(page.url, {
         etag: page.etag ?? undefined,
         lastModified: page.lastModified ?? undefined,
       });
 
+      // HTTP 304 Not Modified - content unchanged, skip re-embedding
+      if (fetchResult.statusCode === 304 && fetchResult.fromCache && page.contentHash) {
+        console.log(`[incremental] Unchanged (304): ${page.url}`);
+        await this.metadataStore.updatePage(page.id, {
+          status: "indexed",
+          fetchedAt: Date.now(),
+        });
+        return;
+      }
+
       const contentHash = createHash("sha256").update(fetchResult.content).digest("hex");
       
-      if (page.contentHash === contentHash && page.status === "indexed") {
+      // Content hash match - skip re-embedding even if status was reset to pending
+      if (page.contentHash === contentHash) {
+        console.log(`[incremental] Unchanged (hash): ${page.url}`);
         await this.metadataStore.updatePage(page.id, {
+          status: "indexed",
           fetchedAt: Date.now(),
           etag: fetchResult.etag,
           lastModified: fetchResult.lastModified,
         });
         return;
+      }
+
+      // Content changed - log for visibility
+      if (page.contentHash) {
+        console.log(`[incremental] Changed: ${page.url}`);
+      } else {
+        console.log(`[incremental] New page: ${page.url}`);
       }
 
       await this.metadataStore.updatePage(page.id, {
@@ -149,6 +178,12 @@ export class IndexerOrchestrator {
       const crawler = this.getCrawler(docset.id);
       await crawler.discoverLinks(docset, page.url, extracted.links, 0);
 
+      // Delete old chunks and vector embeddings before creating new ones
+      const existingChunks = await this.metadataStore.getChunks(page.id);
+      if (existingChunks.length > 0) {
+        const chunkIds = existingChunks.map(c => c.id);
+        await this.vectorStore.delete(namespace, chunkIds);
+      }
       await this.metadataStore.deleteChunks(page.id);
 
       const chunks = this.chunker.chunk(extracted);
@@ -214,24 +249,32 @@ export class IndexerOrchestrator {
       await this.metadataStore.updatePage(page.id, {
         status: isSkippable ? "skipped" : "error",
         errorMessage,
+        retryCount: page.retryCount + 1,
       });
     }
   }
 
   /**
-   * Search across indexed documents
+   * Search across indexed documents with enhanced retrieval features
    */
-  async search(query: SearchQuery): Promise<SearchResult[]> {
+  async search(query: SearchQuery): Promise<EnhancedSearchResult[]> {
     const config = await loadConfig();
     const embeddingProvider = await this.getEmbeddingProvider();
     const queryVector = await embeddingProvider.embedSingle(query.query);
     
-    const topK = query.topK ?? 10;
-    const minScore = query.minScore ?? 0.5;
-    const vectorTopK = config.hybrid?.vectorTopK ?? Math.max(topK * 3, 20);
-    const keywordTopK = config.hybrid?.keywordTopK ?? Math.max(topK * 3, 20);
-    const alpha = config.hybrid?.alpha ?? 0.65;
-    const minKeywordScore = config.hybrid?.minKeywordScore ?? 0;
+    // Apply guardrails with runtime clamping
+    const topK = clamp(query.topK ?? 10, 1, 100);
+    const minScore = clamp(query.minScore ?? 0.5, 0, 1);
+    const vectorTopK = clamp(config.hybrid?.vectorTopK ?? Math.max(topK * 3, 20), 1, 1000);
+    const keywordTopK = clamp(config.hybrid?.keywordTopK ?? Math.max(topK * 3, 20), 1, 1000);
+    const alpha = clamp(config.hybrid?.alpha ?? 0.65, 0, 1);
+    const minKeywordScore = clamp(config.hybrid?.minKeywordScore ?? 0, 0, 1);
+
+    // Retrieval config with overrides
+    const maxChunksPerPage = query.maxChunksPerPage ?? config.retrieval.maxChunksPerPage;
+    const maxTotalChars = query.maxTotalChars ?? config.retrieval.maxTotalChars;
+    const formatSnippets = query.formatSnippets ?? config.retrieval.formatSnippets;
+    const snippetMaxChars = config.retrieval.snippetMaxChars;
 
     const vectorResults = await this.searchVector(
       queryVector,
@@ -240,27 +283,203 @@ export class IndexerOrchestrator {
       minScore
     );
 
+    let mergedResults: SearchResult[];
+
     if (!config.hybrid?.enabled) {
-      return vectorResults.slice(0, topK);
+      mergedResults = vectorResults.slice(0, topK * 2); // Get extra for diversity filtering
+    } else {
+      const keywordResults = await this.metadataStore.searchKeyword(
+        query.query,
+        query.docsetIds,
+        keywordTopK
+      );
+
+      if (keywordResults.length === 0) {
+        mergedResults = vectorResults.slice(0, topK * 2);
+      } else {
+        mergedResults = this.mergeHybridResults(
+          vectorResults,
+          keywordResults,
+          alpha,
+          minKeywordScore,
+          topK * 2 // Get extra for diversity filtering
+        );
+      }
     }
 
-    const keywordResults = await this.metadataStore.searchKeyword(
-      query.query,
-      query.docsetIds,
-      keywordTopK
-    );
+    // Apply diversity filtering (limit chunks per page)
+    const diverseResults = this.applyDiversityFilter(mergedResults, maxChunksPerPage, topK);
 
-    if (keywordResults.length === 0) {
-      return vectorResults.slice(0, topK);
+    // Format snippets and apply character budget
+    return this.formatAndBudgetResults(diverseResults, formatSnippets, snippetMaxChars, maxTotalChars);
+  }
+
+  /**
+   * Apply diversity filter to limit chunks from the same page
+   */
+  private applyDiversityFilter(
+    results: SearchResult[],
+    maxChunksPerPage: number,
+    topK: number
+  ): SearchResult[] {
+    const pageChunkCounts = new Map<string, number>();
+    const diverseResults: SearchResult[] = [];
+
+    for (const result of results) {
+      const pageKey = `${result.docsetId}:${result.pageId}`;
+      const currentCount = pageChunkCounts.get(pageKey) ?? 0;
+
+      if (currentCount < maxChunksPerPage) {
+        diverseResults.push(result);
+        pageChunkCounts.set(pageKey, currentCount + 1);
+
+        if (diverseResults.length >= topK) {
+          break;
+        }
+      }
     }
 
-    return this.mergeHybridResults(
-      vectorResults,
-      keywordResults,
-      alpha,
-      minKeywordScore,
-      topK
-    );
+    return diverseResults;
+  }
+
+  /**
+   * Format snippets and apply character budget
+   */
+  private formatAndBudgetResults(
+    results: SearchResult[],
+    formatSnippets: boolean,
+    snippetMaxChars: number,
+    maxTotalChars: number
+  ): EnhancedSearchResult[] {
+    const enhancedResults: EnhancedSearchResult[] = [];
+    let totalChars = 0;
+
+    for (const result of results) {
+      const snippet = formatSnippets
+        ? this.createFormattedSnippet(result, snippetMaxChars)
+        : undefined;
+
+      const charCount = snippet?.charCount ?? result.content.length;
+
+      // Check if adding this result would exceed budget
+      if (totalChars + charCount > maxTotalChars && enhancedResults.length > 0) {
+        // Try to truncate the content to fit within remaining budget
+        const remainingBudget = maxTotalChars - totalChars;
+        if (remainingBudget >= 200) { // Only include if we can fit meaningful content
+          const truncatedSnippet = formatSnippets
+            ? this.createFormattedSnippet(result, remainingBudget)
+            : undefined;
+          enhancedResults.push({ ...result, snippet: truncatedSnippet });
+        }
+        break;
+      }
+
+      totalChars += charCount;
+      enhancedResults.push({ ...result, snippet });
+    }
+
+    return enhancedResults;
+  }
+
+  /**
+   * Create a formatted snippet with title, URL, and breadcrumb
+   */
+  private createFormattedSnippet(result: SearchResult, maxChars: number): FormattedSnippet {
+    const title = result.title ?? "Untitled";
+    const url = result.url;
+    const breadcrumb = result.heading ? this.formatBreadcrumb(result.heading, url) : null;
+
+    // Calculate overhead for formatting
+    const headerLines = [
+      `## ${title}`,
+      `Source: ${url}`,
+      breadcrumb ? `Section: ${breadcrumb}` : null,
+      "",
+    ].filter(Boolean);
+    const header = headerLines.join("\n");
+    const headerChars = header.length;
+
+    // Calculate remaining chars for content
+    const contentBudget = Math.max(100, maxChars - headerChars - 10); // Reserve some for ellipsis
+    const truncatedContent = this.truncateContent(result.content, contentBudget);
+
+    const formatted = `${header}${truncatedContent}`;
+
+    return {
+      formatted,
+      title: result.title,
+      url,
+      breadcrumb,
+      content: truncatedContent,
+      charCount: formatted.length,
+    };
+  }
+
+  /**
+   * Format heading into a breadcrumb path
+   */
+  private formatBreadcrumb(heading: string, url: string): string {
+    // Extract path segments from URL for context
+    try {
+      const urlObj = new URL(url);
+      const pathParts = urlObj.pathname
+        .split("/")
+        .filter(p => p && p !== "docs" && p !== "api");
+
+      // If we have path context and it differs from heading, include it
+      if (pathParts.length > 0) {
+        const pathContext = pathParts
+          .map(p => p.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()))
+          .slice(-2) // Last 2 path segments
+          .join(" > ");
+
+        // Don't repeat if heading already contains path context
+        if (!heading.toLowerCase().includes(pathParts[pathParts.length - 1]?.toLowerCase() ?? "")) {
+          return `${pathContext} > ${heading}`;
+        }
+      }
+    } catch {
+      // Invalid URL, just return heading
+    }
+    return heading;
+  }
+
+  /**
+   * Truncate content intelligently at sentence/paragraph boundaries
+   */
+  private truncateContent(content: string, maxChars: number): string {
+    if (content.length <= maxChars) {
+      return content;
+    }
+
+    // Try to truncate at paragraph boundary
+    const paragraphEnd = content.lastIndexOf("\n\n", maxChars);
+    if (paragraphEnd > maxChars * 0.5) {
+      return content.slice(0, paragraphEnd) + "\n...";
+    }
+
+    // Try to truncate at sentence boundary
+    const sentenceEnders = [". ", "! ", "? "];
+    let lastSentenceEnd = -1;
+    for (const ender of sentenceEnders) {
+      const pos = content.lastIndexOf(ender, maxChars);
+      if (pos > lastSentenceEnd) {
+        lastSentenceEnd = pos + 1;
+      }
+    }
+
+    if (lastSentenceEnd > maxChars * 0.5) {
+      return content.slice(0, lastSentenceEnd) + "...";
+    }
+
+    // Fall back to word boundary
+    const lastSpace = content.lastIndexOf(" ", maxChars);
+    if (lastSpace > maxChars * 0.7) {
+      return content.slice(0, lastSpace) + "...";
+    }
+
+    // Hard truncate as last resort
+    return content.slice(0, maxChars - 3) + "...";
   }
 
   private async searchVector(
@@ -541,6 +760,86 @@ export class IndexerOrchestrator {
     this.crawlers.delete(docsetId);
     await this.metadataStore.deleteDocset(docsetId);
   }
+
+  /**
+   * Get stuck pages for a docset (pages in intermediate states for too long).
+   */
+  async getStuckPages(docsetId: string, stuckThresholdMs = 5 * 60 * 1000): Promise<StuckPageInfo[]> {
+    return this.metadataStore.getStuckPages(docsetId, stuckThresholdMs);
+  }
+
+  /**
+   * Recover from a crash by resetting stuck pages and resuming crawls.
+   * Should be called on worker startup.
+   * Returns stats about what was recovered.
+   */
+  async recoverFromCrash(options?: { 
+    stuckThresholdMs?: number;
+    maxRetries?: number;
+  }): Promise<{
+    docsetsRecovered: number;
+    stuckPagesReset: number;
+    errorPagesRetried: number;
+  }> {
+    const stuckThresholdMs = options?.stuckThresholdMs ?? 5 * 60 * 1000;
+    const maxRetries = options?.maxRetries ?? 3;
+
+    const docsets = await this.metadataStore.listDocsets();
+    let totalStuckReset = 0;
+    let totalErrorRetried = 0;
+    let docsetsRecovered = 0;
+
+    for (const docset of docsets) {
+      // Skip docsets that are already fully ready
+      if (docset.status === "ready") {
+        const status = await this.metadataStore.getIndexStatus(docset.id);
+        if (status.pendingPages === 0 && status.stuckPages === 0) {
+          continue;
+        }
+      }
+
+      // Reset stuck pages (in intermediate states too long)
+      const stuckReset = await this.metadataStore.resetStuckPages(docset.id, stuckThresholdMs);
+      if (stuckReset > 0) {
+        console.log(`[recovery] Reset ${stuckReset} stuck pages for docset ${docset.name}`);
+        totalStuckReset += stuckReset;
+      }
+
+      // Reset error pages that haven't exhausted retries
+      const errorRetried = await this.metadataStore.resetErrorPagesForRetry(docset.id, maxRetries);
+      if (errorRetried > 0) {
+        console.log(`[recovery] Queued ${errorRetried} error pages for retry in docset ${docset.name}`);
+        totalErrorRetried += errorRetried;
+      }
+
+      // Check if there are pending pages to process
+      const status = await this.metadataStore.getIndexStatus(docset.id);
+      if (status.pendingPages > 0) {
+        // Update docset status to indexing if it was ready
+        if (docset.status === "ready") {
+          await this.metadataStore.updateDocset(docset.id, { status: "indexing" });
+        }
+        
+        // Resume crawling
+        console.log(`[recovery] Resuming crawl for docset ${docset.name} (${status.pendingPages} pending)`);
+        this.startBackgroundCrawl(docset.id);
+        docsetsRecovered++;
+      }
+    }
+
+    return {
+      docsetsRecovered,
+      stuckPagesReset: totalStuckReset,
+      errorPagesRetried: totalErrorRetried,
+    };
+  }
+}
+
+/**
+ * Clamp a value between min and max
+ */
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 let orchestrator: IndexerOrchestrator | null = null;

@@ -1,9 +1,10 @@
 {
   "name": "mem-oracle",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "description": "Documentation indexer and retrieval plugin for Claude Code",
   "module": "src/index.ts",
   "type": "module",
+  "workspaces": ["web"],
   "bin": {
     "mem-oracle": "./src/index.ts"
   },
@@ -13,11 +14,16 @@
     "mcp": "bun run src/index.ts mcp",
     "dev": "bun --hot run src/worker/server.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "web:dev": "bun run --cwd web dev",
+    "web:build": "bun run --cwd web build",
+    "web:start": "bun run --cwd web start",
+    "web:lint": "bun run --cwd web lint"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
-    "linkedom": "^0.18.12"
+    "linkedom": "^0.18.12",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/bun": "latest"

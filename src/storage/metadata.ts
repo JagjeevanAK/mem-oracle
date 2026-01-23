@@ -11,6 +11,7 @@ import type {
   ChunkRecord,
   IndexStatus,
   KeywordSearchResult,
+  StuckPageInfo,
 } from "../types";
 import { getDataDir } from "../config";
 
@@ -41,6 +42,8 @@ CREATE TABLE IF NOT EXISTS pages (
   error_message TEXT,
   etag TEXT,
   last_modified TEXT,
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at INTEGER,
   FOREIGN KEY (docset_id) REFERENCES docsets(id) ON DELETE CASCADE
 );
 
@@ -97,6 +100,21 @@ export class SQLiteMetadataStore implements MetadataStore {
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec("PRAGMA foreign_keys = ON");
     this.db.exec(SCHEMA);
+    this.migrateSchema();
+  }
+
+  private migrateSchema(): void {
+    const columns = this.db
+      .prepare("PRAGMA table_info(pages)")
+      .all() as { name: string }[];
+    const columnNames = new Set(columns.map(c => c.name));
+
+    if (!columnNames.has("retry_count")) {
+      this.db.exec("ALTER TABLE pages ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0");
+    }
+    if (!columnNames.has("last_attempt_at")) {
+      this.db.exec("ALTER TABLE pages ADD COLUMN last_attempt_at INTEGER");
+    }
   }
 
   private buildFtsQuery(query: string): string {
@@ -297,8 +315,8 @@ export class SQLiteMetadataStore implements MetadataStore {
     const id = randomUUID();
 
     const stmt = this.db.prepare(`
-      INSERT INTO pages (id, docset_id, url, path, title, content_hash, fetched_at, indexed_at, status, error_message, etag, last_modified)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO pages (id, docset_id, url, path, title, content_hash, fetched_at, indexed_at, status, error_message, etag, last_modified, retry_count, last_attempt_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -313,10 +331,12 @@ export class SQLiteMetadataStore implements MetadataStore {
       page.status,
       page.errorMessage,
       page.etag,
-      page.lastModified
+      page.lastModified,
+      page.retryCount ?? 0,
+      page.lastAttemptAt
     );
 
-    return { id, ...page };
+    return { id, ...page, retryCount: page.retryCount ?? 0 };
   }
 
   async getPage(id: string): Promise<PageRecord | null> {
@@ -344,6 +364,8 @@ export class SQLiteMetadataStore implements MetadataStore {
       errorMessage: "error_message",
       etag: "etag",
       lastModified: "last_modified",
+      retryCount: "retry_count",
+      lastAttemptAt: "last_attempt_at",
     };
 
     for (const [key, column] of Object.entries(fieldMap)) {
@@ -504,7 +526,9 @@ export class SQLiteMetadataStore implements MetadataStore {
         SUM(CASE WHEN status = 'indexed' THEN 1 ELSE 0 END) as indexed,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as errors,
-        SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) as skipped
+        SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) as skipped,
+        SUM(CASE WHEN status IN ('fetching', 'fetched', 'indexing') THEN 1 ELSE 0 END) as stuck,
+        SUM(CASE WHEN retry_count > 0 THEN 1 ELSE 0 END) as retried
       FROM pages WHERE docset_id = ?
     `);
 
@@ -512,7 +536,15 @@ export class SQLiteMetadataStore implements MetadataStore {
       SELECT COUNT(*) as total FROM chunks WHERE docset_id = ?
     `);
 
-    const pagesResult = pagesStmt.get(docsetId) as { total: number; indexed: number; pending: number; errors: number; skipped: number };
+    const pagesResult = pagesStmt.get(docsetId) as { 
+      total: number; 
+      indexed: number; 
+      pending: number; 
+      errors: number; 
+      skipped: number;
+      stuck: number;
+      retried: number;
+    };
     const chunksResult = chunksStmt.get(docsetId) as { total: number };
 
     return {
@@ -524,6 +556,8 @@ export class SQLiteMetadataStore implements MetadataStore {
       skippedPages: pagesResult.skipped,
       totalChunks: chunksResult.total,
       status: docset.status,
+      stuckPages: pagesResult.stuck,
+      retriedPages: pagesResult.retried,
     };
   }
 
@@ -621,6 +655,8 @@ export class SQLiteMetadataStore implements MetadataStore {
       errorMessage: row.error_message,
       etag: row.etag,
       lastModified: row.last_modified,
+      retryCount: row.retry_count ?? 0,
+      lastAttemptAt: row.last_attempt_at,
     };
   }
 
@@ -637,6 +673,105 @@ export class SQLiteMetadataStore implements MetadataStore {
       embeddingId: row.embedding_id,
       createdAt: row.created_at,
     };
+  }
+
+  /**
+   * Get pages that are stuck in intermediate states (fetching/fetched/indexing).
+   * A page is considered stuck if it's been in that state longer than stuckThresholdMs.
+   */
+  async getStuckPages(docsetId: string, stuckThresholdMs = 5 * 60 * 1000): Promise<StuckPageInfo[]> {
+    const now = Date.now();
+    const stmt = this.db.prepare(`
+      SELECT id, url, status, last_attempt_at, retry_count, error_message
+      FROM pages
+      WHERE docset_id = ?
+        AND status IN ('fetching', 'fetched', 'indexing')
+        AND (last_attempt_at IS NULL OR last_attempt_at < ?)
+      ORDER BY last_attempt_at ASC NULLS FIRST
+    `);
+    
+    const cutoff = now - stuckThresholdMs;
+    const rows = stmt.all(docsetId, cutoff) as {
+      id: string;
+      url: string;
+      status: string;
+      last_attempt_at: number | null;
+      retry_count: number;
+      error_message: string | null;
+    }[];
+
+    return rows.map(row => ({
+      id: row.id,
+      url: row.url,
+      status: row.status as PageRecord["status"],
+      lastAttemptAt: row.last_attempt_at,
+      retryCount: row.retry_count,
+      errorMessage: row.error_message,
+      stuckDurationMs: row.last_attempt_at ? now - row.last_attempt_at : now,
+    }));
+  }
+
+  /**
+   * Get pages that failed but can be retried (retry_count < maxRetries).
+   */
+  async getRetriablePages(docsetId: string, maxRetries = 3): Promise<PageRecord[]> {
+    const stmt = this.db.prepare(`
+      SELECT * FROM pages
+      WHERE docset_id = ?
+        AND status = 'error'
+        AND retry_count < ?
+      ORDER BY retry_count ASC, last_attempt_at ASC NULLS FIRST
+    `);
+    const rows = stmt.all(docsetId, maxRetries) as PageRow[];
+    return rows.map(row => this.rowToPage(row));
+  }
+
+  /**
+   * Reset stuck pages to pending status for retry.
+   * Returns the number of pages reset.
+   */
+  async resetStuckPages(docsetId: string, stuckThresholdMs = 5 * 60 * 1000): Promise<number> {
+    const cutoff = Date.now() - stuckThresholdMs;
+    const stmt = this.db.prepare(`
+      UPDATE pages
+      SET status = 'pending', retry_count = retry_count + 1
+      WHERE docset_id = ?
+        AND status IN ('fetching', 'fetched', 'indexing')
+        AND (last_attempt_at IS NULL OR last_attempt_at < ?)
+    `);
+    const result = stmt.run(docsetId, cutoff);
+    return result.changes;
+  }
+
+  /**
+   * Reset error pages to pending for retry (up to maxRetries).
+   * Returns the number of pages reset.
+   */
+  async resetErrorPagesForRetry(docsetId: string, maxRetries = 3): Promise<number> {
+    const stmt = this.db.prepare(`
+      UPDATE pages
+      SET status = 'pending'
+      WHERE docset_id = ?
+        AND status = 'error'
+        AND retry_count < ?
+    `);
+    const result = stmt.run(docsetId, maxRetries);
+    return result.changes;
+  }
+
+  /**
+   * Get pages that have exhausted all retries.
+   */
+  async getExhaustedPages(docsetId: string, maxRetries = 3): Promise<PageRecord[]> {
+    const stmt = this.db.prepare(`
+      SELECT * FROM pages
+      WHERE docset_id = ?
+        AND status = 'error'
+        AND retry_count >= ?
+      ORDER BY last_attempt_at DESC
+    `);
+    const rows = stmt.all(docsetId, maxRetries) as PageRow[];
+    return rows.map(row => this.rowToPage(row));
   }
 
   close(): void {
@@ -668,6 +803,8 @@ interface PageRow {
   error_message: string | null;
   etag: string | null;
   last_modified: string | null;
+  retry_count: number;
+  last_attempt_at: number | null;
 }
 
 interface ChunkRow {

@@ -29,6 +29,18 @@ mem-oracle is highly configurable to suit your needs. Configuration is stored in
     "requestDelay": 500,
     "timeout": 30000,
     "maxPages": 1000
+  },
+  "hybrid": {
+    "enabled": true,
+    "alpha": 0.65,
+    "vectorTopK": 20,
+    "keywordTopK": 20
+  },
+  "retrieval": {
+    "maxChunksPerPage": 3,
+    "maxTotalChars": 32000,
+    "formatSnippets": true,
+    "snippetMaxChars": 2000
   }
 }
 ```
@@ -160,6 +172,76 @@ Uses TF-IDF for embeddings. No API key required.
 
 ---
 
+### Hybrid Search Settings
+
+Configure how vector and keyword search are combined for better results.
+
+```json title="Hybrid Search Config"
+{
+  "hybrid": {
+    "enabled": true,
+    "alpha": 0.65,
+    "vectorTopK": 20,
+    "keywordTopK": 20,
+    "minKeywordScore": 0
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable hybrid search (vector + keyword) |
+| `alpha` | `0.65` | Weight for vector score (0-1). Higher = more vector weight |
+| `vectorTopK` | `20` | Number of vector results to fetch before merging |
+| `keywordTopK` | `20` | Number of keyword results to fetch before merging |
+| `minKeywordScore` | `0` | Minimum keyword score threshold |
+
+---
+
+### Retrieval Settings
+
+Control how search results are formatted and returned for context injection.
+
+```json title="Retrieval Config"
+{
+  "retrieval": {
+    "maxChunksPerPage": 3,
+    "maxTotalChars": 32000,
+    "formatSnippets": true,
+    "snippetMaxChars": 2000
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `maxChunksPerPage` | `3` | Max chunks from same page (diversity) |
+| `maxTotalChars` | `32000` | Total character budget for all results |
+| `formatSnippets` | `true` | Include formatted snippets with metadata |
+| `snippetMaxChars` | `2000` | Max characters per individual snippet |
+
+#### Diversity Filtering
+
+The `maxChunksPerPage` setting prevents results from being dominated by many chunks from a single page. This ensures diverse results from multiple sources.
+
+#### Character Budget
+
+The `maxTotalChars` setting ensures predictable context injection size for Claude. Results are truncated intelligently at sentence or paragraph boundaries when the budget is exceeded.
+
+#### Snippet Formatting
+
+When `formatSnippets` is enabled, each result includes a pre-formatted snippet ready for context injection:
+
+```text
+## Page Title
+Source: https://example.com/docs/page
+Section: Api > Authentication > OAuth Setup
+
+The actual content goes here...
+```
+
+---
+
 ## Environment Variables
 
 You can also configure via environment variables:
@@ -170,6 +252,8 @@ You can also configure via environment variables:
 | `MEM_ORACLE_DATA_DIR` | Data storage directory |
 | `MEM_ORACLE_TOP_K` | Default number of results |
 | `MEM_ORACLE_AUTO_INDEX` | Auto-index detected URLs |
+| `MEM_ORACLE_MAX_CHUNKS_PER_PAGE` | Max chunks per page (diversity) |
+| `MEM_ORACLE_MAX_TOTAL_CHARS` | Total character budget |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `VOYAGE_API_KEY` | Voyage AI API key |
 | `COHERE_API_KEY` | Cohere API key |

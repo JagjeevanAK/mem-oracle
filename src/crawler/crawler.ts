@@ -76,6 +76,8 @@ export class LinkCrawler {
           errorMessage: null,
           etag: null,
           lastModified: null,
+          retryCount: 0,
+          lastAttemptAt: null,
         });
 
         addedCount++;

@@ -41,6 +41,7 @@ describe("IndexerOrchestrator concurrency", () => {
       updatePage: mock(() => Promise.resolve()),
       getNextPendingPage: mock(() => Promise.resolve(null)),
       deleteChunks: mock(() => Promise.resolve()),
+      getChunks: mock(() => Promise.resolve([])),
       createChunks: mock((chunks: any[]) => Promise.resolve(
         chunks.map((c, i) => ({ id: `chunk-${i}`, ...c, createdAt: Date.now() }))
       )),
@@ -61,6 +62,7 @@ describe("IndexerOrchestrator concurrency", () => {
       init: mock(() => Promise.resolve()),
       upsert: mock(() => Promise.resolve()),
       search: mock(() => Promise.resolve([])),
+      delete: mock(() => Promise.resolve()),
       clear: mock(() => Promise.resolve()),
     };
 

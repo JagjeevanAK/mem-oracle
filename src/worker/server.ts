@@ -6,7 +6,6 @@ import { homedir } from "os";
 import { loadConfig } from "../config";
 import { routeRequest } from "./router";
 import { getOrchestrator } from "../crawler/orchestrator";
-import { getMetadataStore } from "../storage/metadata";
 import { getActiveSessionCount } from "./routes/session";
 
 export interface WorkerServer {
@@ -113,20 +112,19 @@ function startIdleShutdownWatcher(): void {
   });
 }
 
-async function resumePendingIndexing(): Promise<void> {
-  const metadataStore = getMetadataStore();
+async function recoverAndResumeCrawling(): Promise<void> {
   const orchestrator = getOrchestrator();
   
-  const docsets = await metadataStore.listDocsets();
+  // Recover from any previous crash (reset stuck pages, retry errors)
+  const recovery = await orchestrator.recoverFromCrash();
   
-  for (const docset of docsets) {
-    if (docset.status === "indexing") {
-      const status = await metadataStore.getIndexStatus(docset.id);
-      if (status && status.pendingPages > 0) {
-        console.log(`Resuming indexing for ${docset.name}: ${status.pendingPages} pages pending`);
-        orchestrator.resumeBackgroundCrawl(docset.id);
-      }
-    }
+  if (recovery.stuckPagesReset > 0 || recovery.errorPagesRetried > 0) {
+    console.log(
+      `[recovery] Reset ${recovery.stuckPagesReset} stuck pages, ` +
+      `queued ${recovery.errorPagesRetried} for retry across ${recovery.docsetsRecovered} docsets`
+    );
+  } else if (recovery.docsetsRecovered > 0) {
+    console.log(`[recovery] Resumed crawling for ${recovery.docsetsRecovered} docsets`);
   }
 }
 
@@ -142,9 +140,9 @@ export async function startWorkerServer(): Promise<WorkerServer> {
 
   console.log(`mem-oracle worker listening on http://${host}:${port}`);
   
-  // Resume any pending indexing jobs
-  resumePendingIndexing().catch(err => {
-    console.error("Failed to resume pending indexing:", err);
+  // Recover from crash and resume any pending crawls
+  recoverAndResumeCrawling().catch(err => {
+    console.error("Failed to recover and resume crawling:", err);
   });
   
   startIdleShutdownWatcher();

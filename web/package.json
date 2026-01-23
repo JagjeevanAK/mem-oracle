@@ -1,11 +1,11 @@
 {
-  "name": "mem-oracle",
+  "name": "@mem-oracle/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "bun run --bun next dev",
+    "build": "bun run --bun next build",
+    "start": "bun run --bun next start",
     "lint": "eslint"
   },
   "dependencies": {

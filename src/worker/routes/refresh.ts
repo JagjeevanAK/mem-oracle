@@ -8,6 +8,8 @@ interface RefreshRequest {
   baseUrl?: string;
   force?: boolean;
   maxAge?: number; // Max age in hours before refresh is needed
+  /** If true, discard content hashes and re-embed everything (ignores incremental optimization) */
+  fullReindex?: boolean;
 }
 
 interface RefreshResponse {
@@ -15,6 +17,11 @@ interface RefreshResponse {
   status: string;
   refreshed: boolean;
   message: string;
+  /** Stats about the incremental reindex (populated after crawl completes) */
+  incremental?: {
+    preservedHashes: number;
+    clearedHashes: number;
+  };
 }
 
 const DEFAULT_MAX_AGE_HOURS = 24;
@@ -62,16 +69,36 @@ export async function handleRefresh(req: Request): Promise<Response> {
   }
 
   // Reset all pages to pending status for re-indexing
+  // By default, preserve contentHash/etag/lastModified for incremental checking
+  // Only clear them if fullReindex is requested
   const pages = await metadataStore.listPages(docset.id);
+  let preservedHashes = 0;
+  let clearedHashes = 0;
   
   for (const page of pages) {
-    await metadataStore.updatePage(page.id, {
-      status: "pending",
-      fetchedAt: null,
-      indexedAt: null,
-    });
-    // Delete existing chunks for this page
-    await metadataStore.deleteChunks(page.id);
+    const hadHash = page.contentHash !== null;
+    
+    if (body.fullReindex) {
+      // Full reindex: clear everything including content hash
+      await metadataStore.updatePage(page.id, {
+        status: "pending",
+        fetchedAt: null,
+        indexedAt: null,
+        contentHash: null,
+        etag: null,
+        lastModified: null,
+      });
+      // Delete existing chunks for full reindex
+      await metadataStore.deleteChunks(page.id);
+      if (hadHash) clearedHashes++;
+    } else {
+      // Incremental reindex: preserve contentHash/etag/lastModified
+      // Don't delete chunks - they'll be preserved if content is unchanged
+      await metadataStore.updatePage(page.id, {
+        status: "pending",
+      });
+      if (hadHash) preservedHashes++;
+    }
   }
 
   // Update docset status
@@ -88,20 +115,26 @@ export async function handleRefresh(req: Request): Promise<Response> {
     true // wait for seed
   );
 
+  const incrementalMode = body.fullReindex ? "full" : "incremental";
   const response: RefreshResponse = {
     docsetId: updatedDocset.id,
     status: updatedDocset.status,
     refreshed: true,
-    message: `Refreshing ${pages.length} pages from ${docset.name}`,
+    message: `Refreshing ${pages.length} pages from ${docset.name} (${incrementalMode} mode)`,
+    incremental: {
+      preservedHashes,
+      clearedHashes,
+    },
   };
 
   return Response.json(response);
 }
 
 export async function handleRefreshAll(req: Request): Promise<Response> {
-  const body = await req.json() as { force?: boolean; maxAge?: number };
+  const body = await req.json() as { force?: boolean; maxAge?: number; fullReindex?: boolean };
   
   const metadataStore = getMetadataStore();
+  const orchestrator = getOrchestrator();
   const docsets = await metadataStore.listDocsets();
   
   const maxAgeMs = (body.maxAge ?? DEFAULT_MAX_AGE_HOURS) * 60 * 60 * 1000;
@@ -111,25 +144,49 @@ export async function handleRefreshAll(req: Request): Promise<Response> {
     const isStale = Date.now() - docset.updatedAt > maxAgeMs;
     
     if (body.force || isStale) {
-      // Reset pages for re-indexing
+      // Reset pages for re-indexing with incremental optimization
       const pages = await metadataStore.listPages(docset.id);
+      let preservedHashes = 0;
+      let clearedHashes = 0;
       
       for (const page of pages) {
-        await metadataStore.updatePage(page.id, {
-          status: "pending",
-          fetchedAt: null,
-          indexedAt: null,
-        });
-        await metadataStore.deleteChunks(page.id);
+        const hadHash = page.contentHash !== null;
+        
+        if (body.fullReindex) {
+          await metadataStore.updatePage(page.id, {
+            status: "pending",
+            fetchedAt: null,
+            indexedAt: null,
+            contentHash: null,
+            etag: null,
+            lastModified: null,
+          });
+          await metadataStore.deleteChunks(page.id);
+          if (hadHash) clearedHashes++;
+        } else {
+          // Incremental: preserve hashes for unchanged content detection
+          await metadataStore.updatePage(page.id, {
+            status: "pending",
+          });
+          if (hadHash) preservedHashes++;
+        }
       }
 
       await metadataStore.updateDocset(docset.id, { status: "pending" });
+      
+      // Start background crawl for this docset
+      orchestrator.resumeBackgroundCrawl(docset.id);
 
+      const incrementalMode = body.fullReindex ? "full" : "incremental";
       results.push({
         docsetId: docset.id,
         status: "pending",
         refreshed: true,
-        message: `Queued ${pages.length} pages for refresh`,
+        message: `Queued ${pages.length} pages for refresh (${incrementalMode})`,
+        incremental: {
+          preservedHashes,
+          clearedHashes,
+        },
       });
     } else {
       results.push({

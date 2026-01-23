@@ -37,6 +37,8 @@ export interface PageRecord {
   errorMessage: string | null;
   etag: string | null;
   lastModified: string | null;
+  retryCount: number;
+  lastAttemptAt: number | null;
 }
 
 export interface ChunkRecord {
@@ -105,6 +107,12 @@ export interface SearchQuery {
   docsetIds?: string[];
   topK?: number;
   minScore?: number;
+  /** Override max chunks per page (for diversity) */
+  maxChunksPerPage?: number;
+  /** Override max total characters budget */
+  maxTotalChars?: number;
+  /** Whether to format snippets with title/URL/breadcrumbs */
+  formatSnippets?: boolean;
 }
 
 export interface SearchResult {
@@ -202,6 +210,12 @@ export interface MetadataStore {
     docsetIds?: string[],
     topK?: number
   ): Promise<KeywordSearchResult[]>;
+
+  getStuckPages(docsetId: string, stuckThresholdMs?: number): Promise<StuckPageInfo[]>;
+  getRetriablePages(docsetId: string, maxRetries?: number): Promise<PageRecord[]>;
+  resetStuckPages(docsetId: string, stuckThresholdMs?: number): Promise<number>;
+  resetErrorPagesForRetry(docsetId: string, maxRetries?: number): Promise<number>;
+  getExhaustedPages(docsetId: string, maxRetries?: number): Promise<PageRecord[]>;
 }
 
 export interface IndexStatus {
@@ -213,6 +227,29 @@ export interface IndexStatus {
   skippedPages: number;
   totalChunks: number;
   status: DocsetRecord["status"];
+  stuckPages: number;
+  retriedPages: number;
+}
+
+export interface StuckPageInfo {
+  id: string;
+  url: string;
+  status: PageRecord["status"];
+  lastAttemptAt: number | null;
+  retryCount: number;
+  errorMessage: string | null;
+  stuckDurationMs: number;
+}
+
+export interface ReindexStats {
+  totalPages: number;
+  unchangedPages: number;
+  changedPages: number;
+  newPages: number;
+  errorPages: number;
+  skippedPages: number;
+  embeddingsReused: number;
+  embeddingsGenerated: number;
 }
 
 export interface MemOracleConfig {
@@ -233,6 +270,9 @@ export interface MemOracleConfig {
 
   /** Hybrid search config */
   hybrid: HybridSearchConfig;
+
+  /** Retrieval/search result config */
+  retrieval: RetrievalConfig;
 }
 
 export interface EmbeddingConfig {
@@ -282,7 +322,7 @@ export interface CrawlerConfig {
 export interface HybridSearchConfig {
   /** Enable hybrid search (keyword + vector) */
   enabled: boolean;
-  /** Weight for vector score (0-1) */
+  /** Weight for vector score (0-1), clamped at runtime */
   alpha: number;
   /** Vector search headroom */
   vectorTopK?: number;
@@ -290,6 +330,17 @@ export interface HybridSearchConfig {
   keywordTopK?: number;
   /** Minimum keyword score to keep */
   minKeywordScore?: number;
+}
+
+export interface RetrievalConfig {
+  /** Maximum chunks per page in results (for diversity) */
+  maxChunksPerPage: number;
+  /** Maximum total characters in all result content combined */
+  maxTotalChars: number;
+  /** Whether to include formatted snippets in results */
+  formatSnippets: boolean;
+  /** Character limit per individual snippet */
+  snippetMaxChars: number;
 }
 
 export interface IndexRequest {
@@ -311,11 +362,41 @@ export interface RetrieveRequest {
   query: string;
   docsetIds?: string[];
   topK?: number;
+  /** Override max chunks per page (for diversity) */
+  maxChunksPerPage?: number;
+  /** Override max total characters budget */
+  maxTotalChars?: number;
+  /** Whether to format snippets with title/URL/breadcrumbs */
+  formatSnippets?: boolean;
+}
+
+export interface FormattedSnippet {
+  /** Full formatted string ready for context injection */
+  formatted: string;
+  /** Page title */
+  title: string | null;
+  /** Source URL */
+  url: string;
+  /** Heading breadcrumb path (e.g., "Installation > Prerequisites") */
+  breadcrumb: string | null;
+  /** The actual content snippet */
+  content: string;
+  /** Character count of the formatted snippet */
+  charCount: number;
+}
+
+export interface EnhancedSearchResult extends SearchResult {
+  /** Formatted snippet for context injection */
+  snippet?: FormattedSnippet;
 }
 
 export interface RetrieveResponse {
-  results: SearchResult[];
+  results: EnhancedSearchResult[];
   query: string;
+  /** Total characters in all results */
+  totalChars: number;
+  /** Whether results were truncated due to budget */
+  truncated: boolean;
 }
 
 export interface StatusRequest {
@@ -323,7 +404,7 @@ export interface StatusRequest {
 }
 
 export interface StatusResponse {
-  docsets: (DocsetRecord & { indexStatus: IndexStatus })[];
+  docsets: (DocsetRecord & { indexStatus: IndexStatus; stuckPages?: StuckPageInfo[] })[];
 }
 
 export interface ListPagesRequest {
