@@ -5,7 +5,7 @@
  */
 
 import { spawn } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { mkdir } from "fs/promises";
 import { join, dirname } from "path";
 import { homedir } from "os";
@@ -37,6 +37,12 @@ interface IndexResponse {
 
 interface OpenCodeEvent {
   type: string;
+  sessionID?: string;
+  event?: {
+    info?: {
+      id?: string;
+    };
+  };
   [key: string]: unknown;
 }
 
@@ -54,6 +60,16 @@ interface OpenCodePluginContext {
   worktree: string;
   client: unknown;
   $: (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+}
+
+interface StatusResponse {
+  docsets?: Array<{
+    status?: string;
+    indexStatus?: {
+      pendingPages?: number;
+      totalPages?: number;
+    } | null;
+  }>;
 }
 
 function getRepoRoot(): string {
@@ -121,6 +137,8 @@ async function startWorker(): Promise<boolean> {
       ...process.env,
       MEM_ORACLE_PORT: String(WORKER_PORT),
       MEM_ORACLE_DATA_DIR: DATA_DIR,
+      MEM_ORACLE_INSTALL_SOURCE: "opencode",
+      MEM_ORACLE_PLUGIN_ROOT: repoRoot,
     },
   });
 
@@ -150,6 +168,124 @@ async function ensureWorkerRunning(): Promise<void> {
   } else {
     console.error("[mem-oracle] Failed to start worker. Check logs at: " + LOG_FILE);
   }
+}
+
+function getSessionIdFromEvent(event: OpenCodeEvent): string | null {
+  if (typeof event.sessionID === "string") {
+    return event.sessionID;
+  }
+  const infoId = event.event?.info?.id;
+  if (typeof infoId === "string") {
+    return infoId;
+  }
+  return null;
+}
+
+async function registerSessionWithWorker(sessionId: string): Promise<void> {
+  try {
+    await fetch(`${WORKER_URL}/session/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, clientType: "opencode" }),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    // Registration failed silently
+  }
+}
+
+async function unregisterSessionWithWorker(sessionId: string): Promise<{ remainingSessions: number } | null> {
+  try {
+    const response = await fetch(`${WORKER_URL}/session/unregister`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok) {
+      const data = await response.json() as { remainingSessions?: number };
+      return { remainingSessions: data.remainingSessions ?? 0 };
+    }
+  } catch {
+    // Unregister failed silently
+  }
+  return null;
+}
+
+async function getActiveSessionCount(): Promise<number> {
+  try {
+    const response = await fetch(`${WORKER_URL}/sessions`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (response.ok) {
+      const data = await response.json() as { count?: number };
+      return data.count ?? 0;
+    }
+  } catch {
+    // Ignore
+  }
+  return 0;
+}
+
+async function getIndexingStatus(): Promise<StatusResponse | null> {
+  try {
+    const response = await fetch(`${WORKER_URL}/status`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok) {
+      return await response.json() as StatusResponse;
+    }
+  } catch {
+    // Status check failed silently
+  }
+  return null;
+}
+
+async function hasActiveIndexing(): Promise<boolean> {
+  const status = await getIndexingStatus();
+  if (!status?.docsets) {
+    return false;
+  }
+  return status.docsets.some(docset => {
+    if (docset.status !== "indexing") {
+      return false;
+    }
+    const pendingPages = docset.indexStatus?.pendingPages ?? 0;
+    return pendingPages > 0;
+  });
+}
+
+async function stopWorker(): Promise<boolean> {
+  if (!(await isWorkerRunning())) {
+    return false;
+  }
+  if (!existsSync(PID_FILE)) {
+    return false;
+  }
+  const pidText = readFileSync(PID_FILE, "utf-8").trim();
+  const pid = Number.parseInt(pidText, 10);
+  if (!Number.isFinite(pid)) {
+    return false;
+  }
+  try {
+    process.kill(pid, "SIGTERM");
+    writeFileSync(PID_FILE, "");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function stopWorkerIfIdle(sessionId: string): Promise<void> {
+  const unregisterResult = await unregisterSessionWithWorker(sessionId);
+  const remainingSessions = unregisterResult?.remainingSessions ?? await getActiveSessionCount();
+  if (remainingSessions > 0) {
+    return;
+  }
+  if (await hasActiveIndexing()) {
+    return;
+  }
+  await stopWorker();
 }
 
 function parseDocUrl(input: string): { baseUrl: string; seedSlug: string } | null {
@@ -259,9 +395,27 @@ export const MemOraclePlugin = async (ctx: OpenCodePluginContext) => {
 
   return {
     event: async ({ event }: { event: OpenCodeEvent }) => {
-      if (event.type === "session.start") {
+      const sessionId = getSessionIdFromEvent(event);
+      
+      if (event.type === "session.created" || event.type === "session.start") {
         console.error("[mem-oracle] Session started");
         await ensureWorkerRunning();
+        if (sessionId) {
+          await registerSessionWithWorker(sessionId);
+        }
+        return;
+      }
+      
+      if (event.type === "session.deleted" || event.type === "session.end") {
+        console.error("[mem-oracle] Session ended");
+        if (sessionId) {
+          await stopWorkerIfIdle(sessionId);
+        }
+        return;
+      }
+      
+      if (sessionId) {
+        await registerSessionWithWorker(sessionId);
       }
     },
 

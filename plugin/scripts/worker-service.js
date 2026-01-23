@@ -286,6 +286,8 @@ async function startWorker() {
   await ensureDataDir();
 
   const logFd = openSync(LOG_FILE, "a");
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT;
+  const installSource = pluginRoot ? "claude-code" : undefined;
 
   const child = spawn("bun", ["run", entryPoint, "worker"], {
     cwd: repoRoot,
@@ -295,6 +297,8 @@ async function startWorker() {
       ...process.env,
       MEM_ORACLE_PORT: String(WORKER_PORT),
       MEM_ORACLE_DATA_DIR: DATA_DIR,
+      ...(pluginRoot ? { MEM_ORACLE_PLUGIN_ROOT: pluginRoot } : {}),
+      ...(installSource ? { MEM_ORACLE_INSTALL_SOURCE: installSource } : {}),
     },
   });
 
@@ -422,6 +426,11 @@ async function stopWorker() {
 
 async function main() {
   const command = process.argv[2] || "start";
+  const needsSessionState = ["start", "ensure", "stop-if-idle"].includes(command);
+  
+  if (needsSessionState) {
+    await ensureDataDir();
+  }
 
   switch (command) {
     case "start":
