@@ -18,6 +18,34 @@ const DATA_DIR = process.env.MEM_ORACLE_DATA_DIR || join(homedir(), ".mem-oracle
 const PID_FILE = join(DATA_DIR, "worker.pid");
 const LOG_FILE = join(DATA_DIR, "worker.log");
 
+function readStdin() {
+  return new Promise((resolve) => {
+    let data = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => {
+      data += chunk;
+    });
+    process.stdin.on("end", () => resolve(data));
+    process.stdin.on("error", () => resolve(""));
+  });
+}
+
+function safeJsonParse(input) {
+  try {
+    return JSON.parse(input);
+  } catch {
+    return null;
+  }
+}
+
+async function readHookSessionId(clientType) {
+  if (clientType !== "claude-code") return null;
+  const raw = await readStdin();
+  const parsed = safeJsonParse(raw);
+  const sessionId = parsed && typeof parsed.session_id === "string" ? parsed.session_id : null;
+  return sessionId ? `${clientType}:${sessionId}` : null;
+}
+
 function readSessionFile(sessionFile) {
   try {
     if (existsSync(sessionFile)) {
@@ -437,7 +465,7 @@ async function main() {
       await installDependencies();
       
       const clientType = getClientType();
-      const sessionId = getSessionId(clientType);
+      const sessionId = (await readHookSessionId(clientType)) || getSessionId(clientType);
       
       if (await isWorkerRunning()) {
         console.error("[mem-oracle] Worker already running");
@@ -456,9 +484,23 @@ async function main() {
       }
       break;
 
+    case "warm":
+      await installDependencies();
+      if (await isWorkerRunning()) {
+        console.error("[mem-oracle] Worker already running");
+        return;
+      }
+      console.error("[mem-oracle] Starting worker service...");
+      if (await startWorker()) {
+        console.error("[mem-oracle] Worker started successfully on port " + WORKER_PORT);
+      } else {
+        console.error("[mem-oracle] Failed to start worker. Check logs: " + LOG_FILE);
+      }
+      break;
+
     case "ensure":
       const ensureClientType = getClientType();
-      const ensureSessionId = getSessionId(ensureClientType);
+      const ensureSessionId = (await readHookSessionId(ensureClientType)) || getSessionId(ensureClientType);
       
       if (!(await isWorkerRunning())) {
         console.error("[mem-oracle] Worker not running, starting...");
@@ -492,7 +534,7 @@ async function main() {
       }
 
       const stopClientType = getClientType();
-      const stopSessionId = getSessionId(stopClientType);
+      const stopSessionId = (await readHookSessionId(stopClientType)) || getSessionId(stopClientType);
       const unregisterResult = await unregisterSessionWithWorker(stopSessionId);
       
       // Check if other sessions are still connected

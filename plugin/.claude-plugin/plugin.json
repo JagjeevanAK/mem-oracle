@@ -1,6 +1,6 @@
 {
   "name": "mem-oracle",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "Documentation indexer that auto-injects relevant doc snippets into Claude Code context",
   "author": {
     "name": "Jagjeevan Kashid"
