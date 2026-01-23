@@ -14,6 +14,8 @@ import type {
   StuckPageInfo,
 } from "../types";
 import { getDataDir } from "../config";
+import type { SectionInfo } from "../utils/sections";
+import { deriveSectionInfoFromPath } from "../utils/sections";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS docsets (
@@ -34,6 +36,8 @@ CREATE TABLE IF NOT EXISTS pages (
   docset_id TEXT NOT NULL,
   url TEXT NOT NULL,
   path TEXT NOT NULL,
+  section_root TEXT,
+  section_path TEXT,
   title TEXT,
   content_hash TEXT,
   fetched_at INTEGER,
@@ -50,6 +54,8 @@ CREATE TABLE IF NOT EXISTS pages (
 CREATE INDEX IF NOT EXISTS idx_pages_docset_id ON pages(docset_id);
 CREATE INDEX IF NOT EXISTS idx_pages_url ON pages(docset_id, url);
 CREATE INDEX IF NOT EXISTS idx_pages_status ON pages(docset_id, status);
+CREATE INDEX IF NOT EXISTS idx_pages_section_root ON pages(docset_id, section_root);
+CREATE INDEX IF NOT EXISTS idx_pages_section_path ON pages(docset_id, section_path);
 
 CREATE TABLE IF NOT EXISTS chunks (
   id TEXT PRIMARY KEY,
@@ -115,6 +121,46 @@ export class SQLiteMetadataStore implements MetadataStore {
     if (!columnNames.has("last_attempt_at")) {
       this.db.exec("ALTER TABLE pages ADD COLUMN last_attempt_at INTEGER");
     }
+    if (!columnNames.has("section_root")) {
+      this.db.exec("ALTER TABLE pages ADD COLUMN section_root TEXT");
+    }
+    if (!columnNames.has("section_path")) {
+      this.db.exec("ALTER TABLE pages ADD COLUMN section_path TEXT");
+    }
+
+    this.backfillSectionFields();
+  }
+
+  private backfillSectionFields(): void {
+    const rows = this.db.prepare(`
+      SELECT id, path, section_root, section_path
+      FROM pages
+      WHERE section_root IS NULL OR section_path IS NULL
+    `).all() as {
+      id: string;
+      path: string;
+      section_root: string | null;
+      section_path: string | null;
+    }[];
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    const updateStmt = this.db.prepare(`
+      UPDATE pages
+      SET section_root = ?, section_path = ?
+      WHERE id = ?
+    `);
+
+    const tx = this.db.transaction((rows: typeof rows) => {
+      for (const row of rows) {
+        const derived = deriveSectionInfoFromPath(row.path);
+        updateStmt.run(derived.sectionRoot, derived.sectionPath, row.id);
+      }
+    });
+
+    tx(rows);
   }
 
   private buildFtsQuery(query: string): string {
@@ -144,6 +190,36 @@ export class SQLiteMetadataStore implements MetadataStore {
     const map = new Map<string, { url: string; title: string | null }>();
     for (const row of rows) {
       map.set(row.id, { url: row.url, title: row.title });
+    }
+    return map;
+  }
+
+  async getPageSections(pageIds: string[]): Promise<Map<string, SectionInfo>> {
+    if (pageIds.length === 0) {
+      return new Map();
+    }
+
+    const placeholders = pageIds.map(() => "?").join(", ");
+    const stmt = this.db.prepare(
+      `SELECT id, path, section_root, section_path FROM pages WHERE id IN (${placeholders})`
+    );
+    const rows = stmt.all(...pageIds) as {
+      id: string;
+      path: string;
+      section_root: string | null;
+      section_path: string | null;
+    }[];
+    const map = new Map<string, SectionInfo>();
+    for (const row of rows) {
+      if (row.section_root || row.section_path) {
+        map.set(row.id, {
+          sectionRoot: row.section_root ?? null,
+          sectionPath: row.section_path ?? null,
+        });
+        continue;
+      }
+      const derived = deriveSectionInfoFromPath(row.path);
+      map.set(row.id, derived);
     }
     return map;
   }
@@ -311,12 +387,13 @@ export class SQLiteMetadataStore implements MetadataStore {
     stmt.run(id);
   }
 
-  async createPage(page: Omit<PageRecord, "id">): Promise<PageRecord> {
+  async createPage(page: Omit<PageRecord, "id" | "sectionRoot" | "sectionPath">): Promise<PageRecord> {
     const id = randomUUID();
+    const sectionInfo = deriveSectionInfoFromPath(page.path);
 
     const stmt = this.db.prepare(`
-      INSERT INTO pages (id, docset_id, url, path, title, content_hash, fetched_at, indexed_at, status, error_message, etag, last_modified, retry_count, last_attempt_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO pages (id, docset_id, url, path, section_root, section_path, title, content_hash, fetched_at, indexed_at, status, error_message, etag, last_modified, retry_count, last_attempt_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -324,6 +401,8 @@ export class SQLiteMetadataStore implements MetadataStore {
       page.docsetId,
       page.url,
       page.path,
+      sectionInfo.sectionRoot,
+      sectionInfo.sectionPath,
       page.title,
       page.contentHash,
       page.fetchedAt,
@@ -336,7 +415,13 @@ export class SQLiteMetadataStore implements MetadataStore {
       page.lastAttemptAt
     );
 
-    return { id, ...page, retryCount: page.retryCount ?? 0 };
+    return {
+      id,
+      ...page,
+      sectionRoot: sectionInfo.sectionRoot,
+      sectionPath: sectionInfo.sectionPath,
+      retryCount: page.retryCount ?? 0,
+    };
   }
 
   async getPage(id: string): Promise<PageRecord | null> {
@@ -647,6 +732,8 @@ export class SQLiteMetadataStore implements MetadataStore {
       docsetId: row.docset_id,
       url: row.url,
       path: row.path,
+      sectionRoot: row.section_root,
+      sectionPath: row.section_path,
       title: row.title,
       contentHash: row.content_hash,
       fetchedAt: row.fetched_at,
@@ -795,6 +882,8 @@ interface PageRow {
   docset_id: string;
   url: string;
   path: string;
+  section_root: string | null;
+  section_path: string | null;
   title: string | null;
   content_hash: string | null;
   fetched_at: number | null;

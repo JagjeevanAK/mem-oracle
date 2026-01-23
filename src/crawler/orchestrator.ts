@@ -23,6 +23,8 @@ import { createLinkCrawler, LinkCrawler } from "./crawler";
 import { getEmbeddingProvider } from "../embedding";
 import { loadConfig } from "../config";
 import type { EmbeddingProvider } from "../types";
+import type { SectionInfo } from "../utils/sections";
+import { deriveSectionInfoFromPath, extractSectionTokensFromQuery } from "../utils/sections";
 
 interface IndexerOptions {
   metadataStore?: SQLiteMetadataStore;
@@ -317,6 +319,13 @@ export class IndexerOrchestrator {
       }
     }
 
+    const sectionTokens = extractSectionTokensFromQuery(query.query);
+    if (sectionTokens.length > 0) {
+      const pageIds = Array.from(new Set(mergedResults.map(result => result.pageId)));
+      const sectionMap = await this.metadataStore.getPageSections(pageIds);
+      mergedResults = this.applySectionBoosts(mergedResults, sectionMap, sectionTokens);
+    }
+
     // Apply diversity filtering (limit chunks per page)
     const diverseResults = this.applyDiversityFilter(mergedResults, maxChunksPerPage, topK);
 
@@ -350,6 +359,37 @@ export class IndexerOrchestrator {
     }
 
     return diverseResults;
+  }
+
+  private applySectionBoosts(
+    results: SearchResult[],
+    sectionMap: Map<string, SectionInfo>,
+    sectionTokens: string[]
+  ): SearchResult[] {
+    const tokenSet = new Set(sectionTokens);
+    const boosted = results.map(result => {
+      const sectionInfo = sectionMap.get(result.pageId) ?? this.deriveSectionInfoFromUrl(result.url);
+      if (!sectionInfo.sectionRoot && !sectionInfo.sectionPath) {
+        return result;
+      }
+
+      const match = matchSectionTokens(sectionInfo, tokenSet);
+      if (!match.matchesRoot && !match.matchesPath) {
+        return result;
+      }
+
+      const boost = getSectionBoost(match, sectionInfo);
+      if (boost <= 0) {
+        return result;
+      }
+
+      return {
+        ...result,
+        score: clampScore(result.score * (1 + boost)),
+      };
+    });
+
+    return boosted.sort((a, b) => b.score - a.score);
   }
 
   /**
@@ -490,6 +530,15 @@ export class IndexerOrchestrator {
 
     // Hard truncate as last resort
     return content.slice(0, maxChars - 3) + "...";
+  }
+
+  private deriveSectionInfoFromUrl(url: string): SectionInfo {
+    try {
+      const pathname = new URL(url).pathname;
+      return deriveSectionInfoFromPath(pathname);
+    } catch {
+      return { sectionRoot: null, sectionPath: null };
+    }
   }
 
   private async searchVector(
@@ -850,6 +899,54 @@ export class IndexerOrchestrator {
  */
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function matchSectionTokens(
+  sectionInfo: SectionInfo,
+  tokenSet: Set<string>
+): { matchesRoot: boolean; matchesPath: boolean } {
+  const rootSegments = sectionInfo.sectionRoot
+    ? splitSegmentTokens(sectionInfo.sectionRoot)
+    : [];
+  const pathSegments = sectionInfo.sectionPath
+    ? sectionInfo.sectionPath.split("/").flatMap(segment => splitSegmentTokens(segment))
+    : [];
+
+  const matchesRoot = rootSegments.some(segment => tokenSet.has(segment));
+  const matchesPath = pathSegments.some(segment => tokenSet.has(segment));
+
+  return { matchesRoot, matchesPath };
+}
+
+function getSectionBoost(
+  match: { matchesRoot: boolean; matchesPath: boolean },
+  sectionInfo: SectionInfo
+): number {
+  const isSamePath = sectionInfo.sectionRoot && sectionInfo.sectionRoot === sectionInfo.sectionPath;
+  const rootBoost = match.matchesRoot ? 0.12 : 0;
+  const pathBoost = match.matchesPath && !isSamePath ? 0.08 : 0;
+  return rootBoost + pathBoost;
+}
+
+function splitSegmentTokens(segment: string): string[] {
+  const normalized = segment
+    .toLowerCase()
+    .replace(/[^a-z0-9/_-]+/g, "")
+    .trim();
+  if (!normalized) {
+    return [];
+  }
+  const tokens = new Set([normalized]);
+  for (const part of normalized.split(/[_-]/g)) {
+    if (part) {
+      tokens.add(part);
+    }
+  }
+  return Array.from(tokens);
+}
+
+function clampScore(value: number): number {
+  return clamp(value, 0, 1);
 }
 
 let orchestrator: IndexerOrchestrator | null = null;

@@ -29,6 +29,8 @@ export interface PageRecord {
   docsetId: string;
   url: string;
   path: string;
+  sectionRoot: string | null;
+  sectionPath: string | null;
   title: string | null;
   contentHash: string | null;
   fetchedAt: number | null;
@@ -189,7 +191,7 @@ export interface MetadataStore {
   listDocsets(): Promise<DocsetRecord[]>;
   deleteDocset(id: string): Promise<void>;
   
-  createPage(page: Omit<PageRecord, "id">): Promise<PageRecord>;
+  createPage(page: Omit<PageRecord, "id" | "sectionRoot" | "sectionPath">): Promise<PageRecord>;
   getPage(id: string): Promise<PageRecord | null>;
   getPageByUrl(docsetId: string, url: string): Promise<PageRecord | null>;
   updatePage(id: string, updates: Partial<PageRecord>): Promise<void>;
