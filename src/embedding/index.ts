@@ -34,31 +34,12 @@ async function loadProvider(provider: string): Promise<new (config: EmbeddingCon
 }
 
 /**
- * Create an embedding provider from config
+ * Create an embedding provider from config (async)
  */
-export function createEmbeddingProvider(config?: EmbeddingConfig): EmbeddingProvider {
+export async function createEmbeddingProvider(config?: EmbeddingConfig): Promise<EmbeddingProvider> {
   const cfg = config ?? { provider: "local" };
-  
-  // Synchronous creation for known providers
-  switch (cfg.provider) {
-    case "openai": {
-      const { OpenAIEmbeddingProvider } = require("./openai");
-      return new OpenAIEmbeddingProvider(cfg);
-    }
-    case "voyage": {
-      const { VoyageEmbeddingProvider } = require("./voyage");
-      return new VoyageEmbeddingProvider(cfg);
-    }
-    case "cohere": {
-      const { CohereEmbeddingProvider } = require("./cohere");
-      return new CohereEmbeddingProvider(cfg);
-    }
-    case "local":
-    default: {
-      const { LocalEmbeddingProvider } = require("./local");
-      return new LocalEmbeddingProvider();
-    }
-  }
+  const Provider = await loadProvider(cfg.provider);
+  return new Provider(cfg);
 }
 
 // Singleton instance (lazy loaded with config)
@@ -70,7 +51,7 @@ let embeddingProvider: EmbeddingProvider | null = null;
 export async function getEmbeddingProvider(): Promise<EmbeddingProvider> {
   if (!embeddingProvider) {
     const config = await loadConfig();
-    embeddingProvider = createEmbeddingProvider(config.embedding);
+    embeddingProvider = await createEmbeddingProvider(config.embedding);
   }
   return embeddingProvider;
 }

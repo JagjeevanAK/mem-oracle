@@ -54,8 +54,6 @@ CREATE TABLE IF NOT EXISTS pages (
 CREATE INDEX IF NOT EXISTS idx_pages_docset_id ON pages(docset_id);
 CREATE INDEX IF NOT EXISTS idx_pages_url ON pages(docset_id, url);
 CREATE INDEX IF NOT EXISTS idx_pages_status ON pages(docset_id, status);
-CREATE INDEX IF NOT EXISTS idx_pages_section_root ON pages(docset_id, section_root);
-CREATE INDEX IF NOT EXISTS idx_pages_section_path ON pages(docset_id, section_path);
 
 CREATE TABLE IF NOT EXISTS chunks (
   id TEXT PRIMARY KEY,
@@ -103,36 +101,45 @@ export class SQLiteMetadataStore implements MetadataStore {
   constructor(dbPath?: string) {
     const path = dbPath ?? join(getDataDir(), "db", "metadata.sqlite");
     this.db = new Database(path);
-    this.db.exec("PRAGMA journal_mode = WAL");
-    this.db.exec("PRAGMA foreign_keys = ON");
-    this.db.exec(SCHEMA);
+    this.db.run("PRAGMA journal_mode = WAL");
+    this.db.run("PRAGMA foreign_keys = ON");
+    this.db.run(SCHEMA);
     this.migrateSchema();
   }
 
   private migrateSchema(): void {
     const columns = this.db
-      .prepare("PRAGMA table_info(pages)")
+      .query("PRAGMA table_info(pages)")
       .all() as { name: string }[];
     const columnNames = new Set(columns.map(c => c.name));
 
     if (!columnNames.has("retry_count")) {
-      this.db.exec("ALTER TABLE pages ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0");
+      this.db.run("ALTER TABLE pages ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0");
     }
     if (!columnNames.has("last_attempt_at")) {
-      this.db.exec("ALTER TABLE pages ADD COLUMN last_attempt_at INTEGER");
+      this.db.run("ALTER TABLE pages ADD COLUMN last_attempt_at INTEGER");
     }
-    if (!columnNames.has("section_root")) {
-      this.db.exec("ALTER TABLE pages ADD COLUMN section_root TEXT");
+    const hasSectionRoot = columnNames.has("section_root");
+    if (!hasSectionRoot) {
+      this.db.run("ALTER TABLE pages ADD COLUMN section_root TEXT");
     }
-    if (!columnNames.has("section_path")) {
-      this.db.exec("ALTER TABLE pages ADD COLUMN section_path TEXT");
+    const hasSectionPath = columnNames.has("section_path");
+    if (!hasSectionPath) {
+      this.db.run("ALTER TABLE pages ADD COLUMN section_path TEXT");
     }
+
+    this.db.run(
+      "CREATE INDEX IF NOT EXISTS idx_pages_section_root ON pages(docset_id, section_root)"
+    );
+    this.db.run(
+      "CREATE INDEX IF NOT EXISTS idx_pages_section_path ON pages(docset_id, section_path)"
+    );
 
     this.backfillSectionFields();
   }
 
   private backfillSectionFields(): void {
-    const rows = this.db.prepare(`
+    const rows = this.db.query(`
       SELECT id, path, section_root, section_path
       FROM pages
       WHERE section_root IS NULL OR section_path IS NULL
@@ -147,14 +154,14 @@ export class SQLiteMetadataStore implements MetadataStore {
       return;
     }
 
-    const updateStmt = this.db.prepare(`
+    const updateStmt = this.db.query(`
       UPDATE pages
       SET section_root = ?, section_path = ?
       WHERE id = ?
     `);
 
-    const tx = this.db.transaction((rows: typeof rows) => {
-      for (const row of rows) {
+    const tx = this.db.transaction((data: typeof rows) => {
+      for (const row of data) {
         const derived = deriveSectionInfoFromPath(row.path);
         updateStmt.run(derived.sectionRoot, derived.sectionPath, row.id);
       }
@@ -183,7 +190,7 @@ export class SQLiteMetadataStore implements MetadataStore {
     }
 
     const placeholders = pageIds.map(() => "?").join(", ");
-    const stmt = this.db.prepare(
+    const stmt = this.db.query(
       `SELECT id, url, title FROM pages WHERE id IN (${placeholders})`
     );
     const rows = stmt.all(...pageIds) as { id: string; url: string; title: string | null }[];
@@ -200,7 +207,7 @@ export class SQLiteMetadataStore implements MetadataStore {
     }
 
     const placeholders = pageIds.map(() => "?").join(", ");
-    const stmt = this.db.prepare(
+    const stmt = this.db.query(
       `SELECT id, path, section_root, section_path FROM pages WHERE id IN (${placeholders})`
     );
     const rows = stmt.all(...pageIds) as {
@@ -226,8 +233,8 @@ export class SQLiteMetadataStore implements MetadataStore {
 
   private deleteFtsByChunkIds(chunkIds: string[]): void {
     if (chunkIds.length === 0) return;
-    const deleteFts = this.db.prepare(`DELETE FROM chunks_fts WHERE chunk_id = ?`);
-    const deleteMeta = this.db.prepare(`DELETE FROM chunks_fts_meta WHERE chunk_id = ?`);
+    const deleteFts = this.db.query(`DELETE FROM chunks_fts WHERE chunk_id = ?`);
+    const deleteMeta = this.db.query(`DELETE FROM chunks_fts_meta WHERE chunk_id = ?`);
     const tx = this.db.transaction((ids: string[]) => {
       for (const id of ids) {
         deleteFts.run(id);
@@ -238,10 +245,10 @@ export class SQLiteMetadataStore implements MetadataStore {
   }
 
   private ensureFtsReady(): void {
-    const ftsCount = this.db.prepare(`SELECT COUNT(*) as count FROM chunks_fts_meta`).get() as { count: number };
+    const ftsCount = this.db.query(`SELECT COUNT(*) as count FROM chunks_fts_meta`).get() as { count: number };
     if (ftsCount.count > 0) return;
 
-    const chunkCount = this.db.prepare(`SELECT COUNT(*) as count FROM chunks`).get() as { count: number };
+    const chunkCount = this.db.query(`SELECT COUNT(*) as count FROM chunks`).get() as { count: number };
     if (chunkCount.count === 0) return;
 
     this.rebuildFtsIndex();
@@ -258,7 +265,7 @@ export class SQLiteMetadataStore implements MetadataStore {
       content: string;
     }
 
-    const rows = this.db.prepare(`
+    const rows = this.db.query(`
       SELECT 
         chunks.id as chunk_id,
         chunks.docset_id as docset_id,
@@ -271,13 +278,13 @@ export class SQLiteMetadataStore implements MetadataStore {
       JOIN pages ON pages.id = chunks.page_id
     `).all() as FtsRebuildRow[];
 
-    const clearFts = this.db.prepare(`DELETE FROM chunks_fts`);
-    const clearMeta = this.db.prepare(`DELETE FROM chunks_fts_meta`);
-    const ftsStmt = this.db.prepare(`
+    const clearFts = this.db.query(`DELETE FROM chunks_fts`);
+    const clearMeta = this.db.query(`DELETE FROM chunks_fts_meta`);
+    const ftsStmt = this.db.query(`
       INSERT INTO chunks_fts (chunk_id, docset_id, page_id, url, title, heading, content)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    const metaStmt = this.db.prepare(`
+    const metaStmt = this.db.query(`
       INSERT INTO chunks_fts_meta (chunk_id, docset_id, page_id, url)
       VALUES (?, ?, ?, ?)
     `);
@@ -313,7 +320,7 @@ export class SQLiteMetadataStore implements MetadataStore {
     const name = input.name ?? new URL(input.baseUrl).hostname;
     const allowedPaths = input.allowedPaths ?? [input.seedSlug.split("/").slice(0, -1).join("/") || "/"];
 
-    const stmt = this.db.prepare(`
+    const stmt = this.db.query(`
       INSERT INTO docsets (id, name, base_url, seed_slug, allowed_paths, created_at, updated_at, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
@@ -333,13 +340,13 @@ export class SQLiteMetadataStore implements MetadataStore {
   }
 
   async getDocset(id: string): Promise<DocsetRecord | null> {
-    const stmt = this.db.prepare(`SELECT * FROM docsets WHERE id = ?`);
+    const stmt = this.db.query(`SELECT * FROM docsets WHERE id = ?`);
     const row = stmt.get(id) as DocsetRow | null;
     return row ? this.rowToDocset(row) : null;
   }
 
   async getDocsetByUrl(baseUrl: string): Promise<DocsetRecord | null> {
-    const stmt = this.db.prepare(`SELECT * FROM docsets WHERE base_url = ?`);
+    const stmt = this.db.query(`SELECT * FROM docsets WHERE base_url = ?`);
     const row = stmt.get(baseUrl) as DocsetRow | null;
     return row ? this.rowToDocset(row) : null;
   }
@@ -367,23 +374,23 @@ export class SQLiteMetadataStore implements MetadataStore {
     values.push(Date.now());
     values.push(id);
 
-    const stmt = this.db.prepare(`UPDATE docsets SET ${fields.join(", ")} WHERE id = ?`);
+    const stmt = this.db.query(`UPDATE docsets SET ${fields.join(", ")} WHERE id = ?`);
     stmt.run(...values);
   }
 
   async listDocsets(): Promise<DocsetRecord[]> {
-    const stmt = this.db.prepare(`SELECT * FROM docsets ORDER BY created_at DESC`);
+    const stmt = this.db.query(`SELECT * FROM docsets ORDER BY created_at DESC`);
     const rows = stmt.all() as DocsetRow[];
     return rows.map(row => this.rowToDocset(row));
   }
 
   async deleteDocset(id: string): Promise<void> {
-    const chunkRows = this.db.prepare(
+    const chunkRows = this.db.query(
       `SELECT chunk_id FROM chunks_fts_meta WHERE docset_id = ?`
     ).all(id) as { chunk_id: string }[];
     this.deleteFtsByChunkIds(chunkRows.map(row => row.chunk_id));
-    this.db.prepare(`DELETE FROM chunks_fts_meta WHERE docset_id = ?`).run(id);
-    const stmt = this.db.prepare(`DELETE FROM docsets WHERE id = ?`);
+    this.db.query(`DELETE FROM chunks_fts_meta WHERE docset_id = ?`).run(id);
+    const stmt = this.db.query(`DELETE FROM docsets WHERE id = ?`);
     stmt.run(id);
   }
 
@@ -391,7 +398,7 @@ export class SQLiteMetadataStore implements MetadataStore {
     const id = randomUUID();
     const sectionInfo = deriveSectionInfoFromPath(page.path);
 
-    const stmt = this.db.prepare(`
+    const stmt = this.db.query(`
       INSERT INTO pages (id, docset_id, url, path, section_root, section_path, title, content_hash, fetched_at, indexed_at, status, error_message, etag, last_modified, retry_count, last_attempt_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
@@ -425,13 +432,13 @@ export class SQLiteMetadataStore implements MetadataStore {
   }
 
   async getPage(id: string): Promise<PageRecord | null> {
-    const stmt = this.db.prepare(`SELECT * FROM pages WHERE id = ?`);
+    const stmt = this.db.query(`SELECT * FROM pages WHERE id = ?`);
     const row = stmt.get(id) as PageRow | null;
     return row ? this.rowToPage(row) : null;
   }
 
   async getPageByUrl(docsetId: string, url: string): Promise<PageRecord | null> {
-    const stmt = this.db.prepare(`SELECT * FROM pages WHERE docset_id = ? AND url = ?`);
+    const stmt = this.db.query(`SELECT * FROM pages WHERE docset_id = ? AND url = ?`);
     const row = stmt.get(docsetId, url) as PageRow | null;
     return row ? this.rowToPage(row) : null;
   }
@@ -464,7 +471,7 @@ export class SQLiteMetadataStore implements MetadataStore {
     if (fields.length === 0) return;
 
     values.push(id);
-    const stmt = this.db.prepare(`UPDATE pages SET ${fields.join(", ")} WHERE id = ?`);
+    const stmt = this.db.query(`UPDATE pages SET ${fields.join(", ")} WHERE id = ?`);
     stmt.run(...values);
   }
 
@@ -479,13 +486,13 @@ export class SQLiteMetadataStore implements MetadataStore {
 
     sql += ` ORDER BY indexed_at DESC NULLS LAST`;
 
-    const stmt = this.db.prepare(sql);
+    const stmt = this.db.query(sql);
     const rows = stmt.all(...(params as string[])) as PageRow[];
     return rows.map(row => this.rowToPage(row));
   }
 
   async getNextPendingPage(docsetId: string): Promise<PageRecord | null> {
-    const stmt = this.db.prepare(`
+    const stmt = this.db.query(`
       SELECT * FROM pages 
       WHERE docset_id = ? AND status = 'pending' 
       ORDER BY rowid ASC 
@@ -497,7 +504,7 @@ export class SQLiteMetadataStore implements MetadataStore {
 
   async deletePage(id: string): Promise<void> {
     await this.deleteChunks(id);
-    const stmt = this.db.prepare(`DELETE FROM pages WHERE id = ?`);
+    const stmt = this.db.query(`DELETE FROM pages WHERE id = ?`);
     stmt.run(id);
   }
 
@@ -507,17 +514,17 @@ export class SQLiteMetadataStore implements MetadataStore {
     const pageIds = Array.from(new Set(chunks.map(chunk => chunk.pageId)));
     const pageInfoMap = this.getPageInfoMap(pageIds);
 
-    const stmt = this.db.prepare(`
+    const stmt = this.db.query(`
       INSERT INTO chunks (id, page_id, docset_id, content, heading, start_offset, end_offset, chunk_index, embedding_id, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const ftsStmt = this.db.prepare(`
+    const ftsStmt = this.db.query(`
       INSERT INTO chunks_fts (chunk_id, docset_id, page_id, url, title, heading, content)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const metaStmt = this.db.prepare(`
+    const metaStmt = this.db.query(`
       INSERT INTO chunks_fts_meta (chunk_id, docset_id, page_id, url)
       VALUES (?, ?, ?, ?)
     `);
@@ -562,13 +569,13 @@ export class SQLiteMetadataStore implements MetadataStore {
   }
 
   async getChunks(pageId: string): Promise<ChunkRecord[]> {
-    const stmt = this.db.prepare(`SELECT * FROM chunks WHERE page_id = ? ORDER BY chunk_index`);
+    const stmt = this.db.query(`SELECT * FROM chunks WHERE page_id = ? ORDER BY chunk_index`);
     const rows = stmt.all(pageId) as ChunkRow[];
     return rows.map(row => this.rowToChunk(row));
   }
 
   async getChunk(id: string): Promise<ChunkRecord | null> {
-    const stmt = this.db.prepare(`SELECT * FROM chunks WHERE id = ?`);
+    const stmt = this.db.query(`SELECT * FROM chunks WHERE id = ?`);
     const row = stmt.get(id) as ChunkRow | null;
     return row ? this.rowToChunk(row) : null;
   }
@@ -585,17 +592,17 @@ export class SQLiteMetadataStore implements MetadataStore {
     if (fields.length === 0) return;
 
     values.push(id);
-    const stmt = this.db.prepare(`UPDATE chunks SET ${fields.join(", ")} WHERE id = ?`);
+    const stmt = this.db.query(`UPDATE chunks SET ${fields.join(", ")} WHERE id = ?`);
     stmt.run(...values);
   }
 
   async deleteChunks(pageId: string): Promise<void> {
-    const chunkRows = this.db.prepare(
+    const chunkRows = this.db.query(
       `SELECT chunk_id FROM chunks_fts_meta WHERE page_id = ?`
     ).all(pageId) as { chunk_id: string }[];
     this.deleteFtsByChunkIds(chunkRows.map(row => row.chunk_id));
-    this.db.prepare(`DELETE FROM chunks_fts_meta WHERE page_id = ?`).run(pageId);
-    const stmt = this.db.prepare(`DELETE FROM chunks WHERE page_id = ?`);
+    this.db.query(`DELETE FROM chunks_fts_meta WHERE page_id = ?`).run(pageId);
+    const stmt = this.db.query(`DELETE FROM chunks WHERE page_id = ?`);
     stmt.run(pageId);
   }
 
@@ -605,7 +612,7 @@ export class SQLiteMetadataStore implements MetadataStore {
       throw new Error(`Docset not found: ${docsetId}`);
     }
 
-    const pagesStmt = this.db.prepare(`
+    const pagesStmt = this.db.query(`
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN status = 'indexed' THEN 1 ELSE 0 END) as indexed,
@@ -617,7 +624,7 @@ export class SQLiteMetadataStore implements MetadataStore {
       FROM pages WHERE docset_id = ?
     `);
 
-    const chunksStmt = this.db.prepare(`
+    const chunksStmt = this.db.query(`
       SELECT COUNT(*) as total FROM chunks WHERE docset_id = ?
     `);
 
@@ -683,7 +690,7 @@ export class SQLiteMetadataStore implements MetadataStore {
     sql += ` ORDER BY bm25 ASC LIMIT ?`;
     params.push(topK);
 
-    const stmt = this.db.prepare(sql);
+    const stmt = this.db.query(sql);
     const rows = stmt.all(...params) as {
       chunkId: string;
       docsetId: string;
@@ -768,7 +775,7 @@ export class SQLiteMetadataStore implements MetadataStore {
    */
   async getStuckPages(docsetId: string, stuckThresholdMs = 5 * 60 * 1000): Promise<StuckPageInfo[]> {
     const now = Date.now();
-    const stmt = this.db.prepare(`
+    const stmt = this.db.query(`
       SELECT id, url, status, last_attempt_at, retry_count, error_message
       FROM pages
       WHERE docset_id = ?
@@ -802,7 +809,7 @@ export class SQLiteMetadataStore implements MetadataStore {
    * Get pages that failed but can be retried (retry_count < maxRetries).
    */
   async getRetriablePages(docsetId: string, maxRetries = 3): Promise<PageRecord[]> {
-    const stmt = this.db.prepare(`
+    const stmt = this.db.query(`
       SELECT * FROM pages
       WHERE docset_id = ?
         AND status = 'error'
@@ -819,7 +826,7 @@ export class SQLiteMetadataStore implements MetadataStore {
    */
   async resetStuckPages(docsetId: string, stuckThresholdMs = 5 * 60 * 1000): Promise<number> {
     const cutoff = Date.now() - stuckThresholdMs;
-    const stmt = this.db.prepare(`
+    const stmt = this.db.query(`
       UPDATE pages
       SET status = 'pending', retry_count = retry_count + 1
       WHERE docset_id = ?
@@ -835,7 +842,7 @@ export class SQLiteMetadataStore implements MetadataStore {
    * Returns the number of pages reset.
    */
   async resetErrorPagesForRetry(docsetId: string, maxRetries = 3): Promise<number> {
-    const stmt = this.db.prepare(`
+    const stmt = this.db.query(`
       UPDATE pages
       SET status = 'pending'
       WHERE docset_id = ?
@@ -850,7 +857,7 @@ export class SQLiteMetadataStore implements MetadataStore {
    * Get pages that have exhausted all retries.
    */
   async getExhaustedPages(docsetId: string, maxRetries = 3): Promise<PageRecord[]> {
-    const stmt = this.db.prepare(`
+    const stmt = this.db.query(`
       SELECT * FROM pages
       WHERE docset_id = ?
         AND status = 'error'
