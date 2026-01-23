@@ -1,16 +1,21 @@
 import Link from "next/link";
+import { cache } from "react";
 import { CodeBlock, Pre } from "fumadocs-ui/components/codeblock";
 import { highlight } from "fumadocs-core/highlight";
 import { BrandName } from "@/components/brand-name";
 
+const highlightBash = cache(function highlightBash(code: string) {
+  return highlight(code, {
+    lang: "bash",
+    themes: { light: "github-light", dark: "vesper" },
+  });
+});
+
 export default async function Home() {
-  const installCode = await highlight(
-    `/plugin marketplace add jagjeevanak/mem-oracle && /plugin install mem-oracle`,
-    {
-      lang: "bash",
-      themes: { light: "github-light", dark: "vesper" },
-    }
-  );
+  const [marketplaceCode, installCode] = await Promise.all([
+    highlightBash(`/plugin marketplace add jagjeevanak/mem-oracle`),
+    highlightBash(`/plugin install mem-oracle`),
+  ]);
 
   return (
     <div className="fd-dotted-bg flex min-h-screen flex-col items-center justify-center bg-fd-background">
@@ -25,26 +30,6 @@ export default async function Home() {
           </p>
         </div>
 
-        {/* <div className="flex flex-col items-center gap-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FeatureCard
-              title="Local Storage"
-              description="SQLite metadata + disk-based vector store with no external dependencies"
-            />
-            <FeatureCard
-              title="Pluggable Embeddings"
-              description="Local TF-IDF fallback, or use OpenAI, Voyage, or Cohere APIs"
-            />
-            <FeatureCard
-              title="Claude Code Plugin"
-              description="Auto-inject relevant documentation snippets into your prompts"
-            />
-            <FeatureCard
-              title="MCP Server"
-              description="Explicit tool calls for search and index operations"
-            />
-          </div>
-        </div> */}
 
         <div className="flex w-full flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <Link
@@ -82,9 +67,31 @@ export default async function Home() {
         </div>
 
         <div className="mt-6 w-full max-w-full text-left shell-prompt sm:mt-8 sm:max-w-xl">
-          <CodeBlock title="Quick Install (Claude Code)">
-            <Pre>{installCode}</Pre>
-          </CodeBlock>
+          <div className="relative grid gap-3 sm:gap-4 [--step-gap:0.75rem] sm:[--step-gap:1rem]">
+            <div className="relative pl-12">
+              <div
+                aria-hidden="true"
+                className="absolute left-[20px] top-1/2 h-[calc(100%+var(--step-gap))] w-px"
+                style={{
+                  backgroundColor: "white",
+                }}
+              />
+              <div className="absolute left-[7px] top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-white bg-fd-background text-xs font-semibold leading-none text-fd-foreground">
+                1
+              </div>
+              <CodeBlock title="Add Marketplace">
+                <Pre>{marketplaceCode}</Pre>
+              </CodeBlock>
+            </div>
+            <div className="relative pl-12">
+              <div className="absolute left-[7px] top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-white bg-fd-background text-xs font-semibold leading-none text-fd-foreground">
+                2
+              </div>
+              <CodeBlock title="Install Plugin">
+                <Pre>{installCode}</Pre>
+              </CodeBlock>
+            </div>
+          </div>
         </div>
       </main>
     </div>
