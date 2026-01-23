@@ -1,7 +1,0 @@
-{
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- web/",
-  "framework": "nextjs",
-  "buildCommand": "cd web && bun install && bun run build",
-  "outputDirectory": "web/.next",
-  "installCommand": "echo 'handled in buildCommand'"
-}
