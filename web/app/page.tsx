@@ -5,7 +5,7 @@ import { BrandName } from "@/components/brand-name";
 
 export default async function Home() {
   const installCode = await highlight(
-    `/plugin add jagjeevanak/mem-oracle && /plugin install mem-oracle`,
+    `/plugin marketplace add jagjeevanak/mem-oracle && /plugin install mem-oracle`,
     {
       lang: "bash",
       themes: { light: "github-light", dark: "vesper" },

@@ -16,7 +16,7 @@ A locally-running documentation oracle that indexes web docs and injects relevan
 
 ```bash
 # In Claude Code terminal:
-/plugin add jagjeevanak/mem-oracle
+/plugin marketplace add jagjeevanak/mem-oracle && /plugin install mem-oracle
 ```
 
 That's it! The plugin will:
@@ -164,7 +164,7 @@ Or Voyage AI:
 
 ```bash
 # In Claude Code terminal
-> /plugin add jagjeevanak/mem-oracle
+> /plugin marketplace add jagjeevanak/mem-oracle
 > /plugin install mem-oracle
 ```
 
