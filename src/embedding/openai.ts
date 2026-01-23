@@ -1,6 +1,7 @@
 // OpenAI embedding provider
 
 import type { EmbeddingProvider, EmbeddingConfig } from "../types";
+import { fetchWithRetry } from "./retry";
 
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly name = "openai";
@@ -43,7 +44,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   }
 
   private async embedBatch(texts: string[]): Promise<number[][]> {
-    const response = await fetch(`${this.apiBase}/embeddings`, {
+    const response = await fetchWithRetry(`${this.apiBase}/embeddings`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${this.apiKey}`,

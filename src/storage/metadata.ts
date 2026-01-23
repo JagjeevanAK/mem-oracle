@@ -503,7 +503,8 @@ export class SQLiteMetadataStore implements MetadataStore {
         COUNT(*) as total,
         SUM(CASE WHEN status = 'indexed' THEN 1 ELSE 0 END) as indexed,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as errors
+        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as errors,
+        SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) as skipped
       FROM pages WHERE docset_id = ?
     `);
 
@@ -511,7 +512,7 @@ export class SQLiteMetadataStore implements MetadataStore {
       SELECT COUNT(*) as total FROM chunks WHERE docset_id = ?
     `);
 
-    const pagesResult = pagesStmt.get(docsetId) as { total: number; indexed: number; pending: number; errors: number };
+    const pagesResult = pagesStmt.get(docsetId) as { total: number; indexed: number; pending: number; errors: number; skipped: number };
     const chunksResult = chunksStmt.get(docsetId) as { total: number };
 
     return {
@@ -520,6 +521,7 @@ export class SQLiteMetadataStore implements MetadataStore {
       indexedPages: pagesResult.indexed,
       pendingPages: pagesResult.pending,
       errorPages: pagesResult.errors,
+      skippedPages: pagesResult.skipped,
       totalChunks: chunksResult.total,
       status: docset.status,
     };

@@ -8,6 +8,7 @@ export { LocalEmbeddingProvider } from "./local";
 export { OpenAIEmbeddingProvider } from "./openai";
 export { VoyageEmbeddingProvider } from "./voyage";
 export { CohereEmbeddingProvider } from "./cohere";
+export { fetchWithRetry } from "./retry";
 
 // Lazy imports for tree-shaking
 async function loadProvider(provider: string): Promise<new (config: EmbeddingConfig) => EmbeddingProvider> {

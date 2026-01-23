@@ -126,7 +126,7 @@ async function main() {
           console.log(`  ID: ${docset.id}`);
           console.log(`  Status: ${status.status}`);
           console.log(`  Pages: ${status.indexedPages}/${status.totalPages} indexed`);
-          console.log(`  Pending: ${status.pendingPages}, Errors: ${status.errorPages}`);
+          console.log(`  Pending: ${status.pendingPages}, Errors: ${status.errorPages}, Skipped: ${status.skippedPages}`);
           console.log(`  Chunks: ${status.totalChunks}`);
         }
       }

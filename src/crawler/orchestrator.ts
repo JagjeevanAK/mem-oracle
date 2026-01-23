@@ -30,6 +30,13 @@ interface IndexerOptions {
   crawlerOptions?: { maxPages?: number; maxDepth?: number };
 }
 
+interface CrawlRunnerState {
+  inFlight: number;
+  nextAllowedFetchAt: number;
+  stopRequested: boolean;
+  runningPromise: Promise<void> | null;
+}
+
 export class IndexerOrchestrator {
   private metadataStore: SQLiteMetadataStore;
   private vectorStore: LocalVectorStore;
@@ -38,8 +45,8 @@ export class IndexerOrchestrator {
   private chunker: TextChunker;
   private embeddingProvider: EmbeddingProvider | null = null;
   private crawlers: Map<string, LinkCrawler> = new Map();
-  private backgroundTasks: Map<string, NodeJS.Timeout> = new Map();
   private crawlerOptions: { maxPages?: number; maxDepth?: number };
+  private runnerStates: Map<string, CrawlRunnerState> = new Map();
 
   constructor(options?: IndexerOptions) {
     this.metadataStore = options?.metadataStore ?? getMetadataStore();
@@ -201,8 +208,11 @@ export class IndexerOrchestrator {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`Error indexing page ${page.url}:`, errorMessage);
       
+      // HTTP 401/403/404 are expected (auth-protected or missing pages) - mark as skipped
+      const isSkippable = /^HTTP (401|403|404)\b/.test(errorMessage);
+      
       await this.metadataStore.updatePage(page.id, {
-        status: "error",
+        status: isSkippable ? "skipped" : "error",
         errorMessage,
       });
     }
@@ -344,42 +354,109 @@ export class IndexerOrchestrator {
     return merged.sort((a, b) => b.score - a.score).slice(0, topK);
   }
 
+  private getRunnerState(docsetId: string): CrawlRunnerState {
+    let state = this.runnerStates.get(docsetId);
+    if (!state) {
+      state = {
+        inFlight: 0,
+        nextAllowedFetchAt: 0,
+        stopRequested: false,
+        runningPromise: null,
+      };
+      this.runnerStates.set(docsetId, state);
+    }
+    return state;
+  }
+
+  private async waitForFetchSlot(state: CrawlRunnerState, requestDelay: number): Promise<void> {
+    const now = Date.now();
+    if (now < state.nextAllowedFetchAt) {
+      await new Promise(resolve => setTimeout(resolve, state.nextAllowedFetchAt - now));
+    }
+    state.nextAllowedFetchAt = Date.now() + requestDelay;
+  }
+
   private startBackgroundCrawl(docsetId: string): void {
-    if (this.backgroundTasks.has(docsetId)) {
+    const state = this.getRunnerState(docsetId);
+    
+    if (state.runningPromise) {
       return;
     }
 
-    const crawl = async () => {
-      const docset = await this.metadataStore.getDocset(docsetId);
-      if (!docset) {
-        this.stopBackgroundCrawl(docsetId);
-        return;
+    state.stopRequested = false;
+    state.runningPromise = this.runConcurrentCrawl(docsetId, state);
+    
+    state.runningPromise
+      .catch(err => console.error(`Background crawl error for ${docsetId}:`, err))
+      .finally(() => {
+        state.runningPromise = null;
+      });
+  }
+
+  private async runConcurrentCrawl(docsetId: string, state: CrawlRunnerState): Promise<void> {
+    const config = await loadConfig();
+    const concurrency = config.crawler.concurrency;
+    const requestDelay = config.crawler.requestDelay;
+
+    const docset = await this.metadataStore.getDocset(docsetId);
+    if (!docset) {
+      return;
+    }
+
+    const crawler = this.getCrawler(docsetId);
+    if (!crawler.hasMore()) {
+      await crawler.loadPendingPages(docsetId);
+    }
+
+    const workers: Promise<void>[] = [];
+
+    const spawnWorker = async (): Promise<void> => {
+      while (!state.stopRequested) {
+        if (state.inFlight >= concurrency) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+          continue;
+        }
+
+        const page = await this.metadataStore.getNextPendingPage(docsetId);
+        if (!page) {
+          break;
+        }
+
+        state.inFlight++;
+
+        const currentDocset = await this.metadataStore.getDocset(docsetId);
+        if (!currentDocset) {
+          state.inFlight--;
+          break;
+        }
+
+        await this.waitForFetchSlot(state, requestDelay);
+
+        this.indexPage(currentDocset, page)
+          .catch(err => console.error(`Error indexing ${page.url}:`, err))
+          .finally(() => {
+            state.inFlight--;
+          });
+
+        if (!crawler.hasMore()) {
+          await crawler.loadPendingPages(docsetId);
+        }
       }
-
-      const crawler = this.getCrawler(docsetId);
-      
-      if (!crawler.hasMore()) {
-        await crawler.loadPendingPages(docsetId);
-      }
-
-      const nextPage = await this.metadataStore.getNextPendingPage(docsetId);
-      
-      if (!nextPage) {
-        await this.metadataStore.updateDocset(docsetId, { status: "ready" });
-        this.stopBackgroundCrawl(docsetId);
-        return;
-      }
-
-      await this.indexPage(docset, nextPage);
-
-      const config = await loadConfig();
-      const delay = config.crawler.requestDelay;
-      
-      const timeoutId = setTimeout(() => crawl(), delay);
-      this.backgroundTasks.set(docsetId, timeoutId);
     };
 
-    crawl();
+    for (let i = 0; i < concurrency; i++) {
+      workers.push(spawnWorker());
+    }
+
+    await Promise.all(workers);
+
+    while (state.inFlight > 0) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    if (!state.stopRequested) {
+      await this.metadataStore.updateDocset(docsetId, { status: "ready" });
+    }
   }
 
   /**
@@ -393,10 +470,9 @@ export class IndexerOrchestrator {
    * Stop background crawling for a docset
    */
   stopBackgroundCrawl(docsetId: string): void {
-    const timeoutId = this.backgroundTasks.get(docsetId);
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      this.backgroundTasks.delete(docsetId);
+    const state = this.runnerStates.get(docsetId);
+    if (state) {
+      state.stopRequested = true;
     }
   }
 
@@ -404,8 +480,27 @@ export class IndexerOrchestrator {
    * Stop all background crawling
    */
   stopAllBackgroundCrawls(): void {
-    for (const [docsetId] of this.backgroundTasks) {
+    for (const [docsetId] of this.runnerStates) {
       this.stopBackgroundCrawl(docsetId);
+    }
+  }
+
+  /**
+   * Check if a docset is currently being crawled
+   */
+  isCrawling(docsetId: string): boolean {
+    const state = this.runnerStates.get(docsetId);
+    if (!state) return false;
+    return state.runningPromise !== null && !state.stopRequested;
+  }
+
+  /**
+   * Wait for background crawl to complete (useful for testing)
+   */
+  async waitForCrawlComplete(docsetId: string): Promise<void> {
+    const state = this.runnerStates.get(docsetId);
+    if (state?.runningPromise) {
+      await state.runningPromise;
     }
   }
 

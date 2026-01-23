@@ -1,6 +1,7 @@
 // Voyage AI embedding provider
 
 import type { EmbeddingProvider, EmbeddingConfig } from "../types";
+import { fetchWithRetry } from "./retry";
 
 export class VoyageEmbeddingProvider implements EmbeddingProvider {
   readonly name = "voyage";
@@ -41,7 +42,7 @@ export class VoyageEmbeddingProvider implements EmbeddingProvider {
   }
 
   private async embedBatch(texts: string[]): Promise<number[][]> {
-    const response = await fetch(`${this.apiBase}/embeddings`, {
+    const response = await fetchWithRetry(`${this.apiBase}/embeddings`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${this.apiKey}`,

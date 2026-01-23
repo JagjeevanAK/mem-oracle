@@ -296,7 +296,7 @@ export class McpServer {
         `**${docset.name}** (${docset.baseUrl})\n` +
         `  ID: ${docset.id}\n` +
         `  Status: ${status.status}\n` +
-        `  Pages: ${status.indexedPages}/${status.totalPages} indexed, ${status.pendingPages} pending, ${status.errorPages} errors\n` +
+        `  Pages: ${status.indexedPages}/${status.totalPages} indexed, ${status.pendingPages} pending, ${status.errorPages} errors, ${status.skippedPages} skipped\n` +
         `  Chunks: ${status.totalChunks}`
       );
     }

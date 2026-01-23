@@ -1,6 +1,7 @@
 // Cohere embedding provider
 
 import type { EmbeddingProvider, EmbeddingConfig } from "../types";
+import { fetchWithRetry } from "./retry";
 
 export class CohereEmbeddingProvider implements EmbeddingProvider {
   readonly name = "cohere";
@@ -40,7 +41,7 @@ export class CohereEmbeddingProvider implements EmbeddingProvider {
   }
 
   private async embedBatch(texts: string[]): Promise<number[][]> {
-    const response = await fetch(`${this.apiBase}/embed`, {
+    const response = await fetchWithRetry(`${this.apiBase}/embed`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${this.apiKey}`,

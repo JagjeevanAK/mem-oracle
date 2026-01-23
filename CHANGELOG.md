@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.4] - 2026-01-24
+
+### Added
+
+- **Pages listing API** - New `/pages/:docsetId` endpoint to list and filter pages by status
+- **Retry with exponential backoff** - New retry mechanism for embedding API calls with jitter and Retry-After header support
+
+### Changed
+
+- **Concurrent crawling** - Improved orchestrator with proper concurrency control using `CrawlRunnerState`
+- **HTTP error handling** - 401/403/404 responses now mark pages as "skipped" instead of "error"
+- **Rate limiting** - Better fetch slot management with configurable request delays
+
+### Fixed
+
+- Embedding providers now use retry logic for transient failures (429, 500, 502, 503, 504)
+
 ## [1.0.0] - 2026-01-20
 
 ### Added

@@ -33,7 +33,7 @@ export interface PageRecord {
   contentHash: string | null;
   fetchedAt: number | null;
   indexedAt: number | null;
-  status: "pending" | "fetching" | "fetched" | "indexing" | "indexed" | "error";
+  status: "pending" | "fetching" | "fetched" | "indexing" | "indexed" | "error" | "skipped";
   errorMessage: string | null;
   etag: string | null;
   lastModified: string | null;
@@ -210,6 +210,7 @@ export interface IndexStatus {
   indexedPages: number;
   pendingPages: number;
   errorPages: number;
+  skippedPages: number;
   totalChunks: number;
   status: DocsetRecord["status"];
 }
@@ -323,4 +324,28 @@ export interface StatusRequest {
 
 export interface StatusResponse {
   docsets: (DocsetRecord & { indexStatus: IndexStatus })[];
+}
+
+export interface ListPagesRequest {
+  status?: PageRecord["status"];
+  limit?: number;
+  offset?: number;
+}
+
+export interface PageSummary {
+  id: string;
+  url: string;
+  path: string;
+  title: string | null;
+  status: PageRecord["status"];
+  errorMessage: string | null;
+  fetchedAt: number | null;
+  indexedAt: number | null;
+}
+
+export interface ListPagesResponse {
+  pages: PageSummary[];
+  total: number;
+  limit: number;
+  offset: number;
 }

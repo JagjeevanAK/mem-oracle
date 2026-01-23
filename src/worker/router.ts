@@ -7,6 +7,7 @@ import {
   handleStatus,
   handleDeleteDocset,
   handleGetDocset,
+  handleListPages,
   handleRefresh,
   handleRefreshAll,
   handleRegisterSession,
@@ -48,12 +49,21 @@ export async function routeRequest(req: Request): Promise<Response> {
       response = await handleRefreshAll(req);
     }
     else if (path.startsWith("/docset/")) {
-      const docsetId = path.slice("/docset/".length);
+      const remainder = path.slice("/docset/".length);
+      const parts = remainder.split("/");
+      const docsetId = parts[0] ?? "";
+      const subResource = parts[1];
       
-      if (method === "DELETE") {
+      if (!docsetId) {
+        response = notFoundResponse();
+      }
+      else if (subResource === "pages" && method === "GET") {
+        response = await handleListPages(docsetId, url);
+      }
+      else if (!subResource && method === "DELETE") {
         response = await handleDeleteDocset(docsetId);
       }
-      else if (method === "GET") {
+      else if (!subResource && method === "GET") {
         response = await handleGetDocset(docsetId);
       }
       else {
