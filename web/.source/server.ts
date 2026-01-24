@@ -1,13 +1,13 @@
 // @ts-nocheck
-import * as __fd_glob_9 from "../content/docs/troubleshooting.mdx?collection=docs"
-import * as __fd_glob_8 from "../content/docs/mcp.mdx?collection=docs"
-import * as __fd_glob_7 from "../content/docs/installation.mdx?collection=docs"
-import * as __fd_glob_6 from "../content/docs/index.mdx?collection=docs"
+import * as __fd_glob_9 from "../content/docs/mcp.mdx?collection=docs"
+import * as __fd_glob_8 from "../content/docs/installation.mdx?collection=docs"
+import * as __fd_glob_7 from "../content/docs/troubleshooting.mdx?collection=docs"
+import * as __fd_glob_6 from "../content/docs/api.mdx?collection=docs"
 import * as __fd_glob_5 from "../content/docs/getting-started.mdx?collection=docs"
-import * as __fd_glob_4 from "../content/docs/configuration.mdx?collection=docs"
-import * as __fd_glob_3 from "../content/docs/cli.mdx?collection=docs"
-import * as __fd_glob_2 from "../content/docs/architecture.mdx?collection=docs"
-import * as __fd_glob_1 from "../content/docs/api.mdx?collection=docs"
+import * as __fd_glob_4 from "../content/docs/architecture.mdx?collection=docs"
+import * as __fd_glob_3 from "../content/docs/index.mdx?collection=docs"
+import * as __fd_glob_2 from "../content/docs/cli.mdx?collection=docs"
+import * as __fd_glob_1 from "../content/docs/configuration.mdx?collection=docs"
 import { default as __fd_glob_0 } from "../content/docs/meta.json?collection=docs"
 import { server } from 'fumadocs-mdx/runtime/server';
 import type * as Config from '../source.config';
@@ -17,4 +17,4 @@ const create = server<typeof Config, import("fumadocs-mdx/runtime/types").Intern
   }
 }>({"doc":{"passthroughs":["extractedReferences"]}});
 
-export const docs = await create.docs("docs", "content/docs", {"meta.json": __fd_glob_0, }, {"api.mdx": __fd_glob_1, "architecture.mdx": __fd_glob_2, "cli.mdx": __fd_glob_3, "configuration.mdx": __fd_glob_4, "getting-started.mdx": __fd_glob_5, "index.mdx": __fd_glob_6, "installation.mdx": __fd_glob_7, "mcp.mdx": __fd_glob_8, "troubleshooting.mdx": __fd_glob_9, });
+export const docs = await create.docs("docs", "content/docs", {"meta.json": __fd_glob_0, }, {"configuration.mdx": __fd_glob_1, "cli.mdx": __fd_glob_2, "index.mdx": __fd_glob_3, "architecture.mdx": __fd_glob_4, "getting-started.mdx": __fd_glob_5, "api.mdx": __fd_glob_6, "troubleshooting.mdx": __fd_glob_7, "installation.mdx": __fd_glob_8, "mcp.mdx": __fd_glob_9, });
