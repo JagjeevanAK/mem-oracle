@@ -20,7 +20,7 @@ export default async function Home() {
   return (
     <div className="fd-dotted-bg flex min-h-screen flex-col items-center justify-center bg-fd-background">
       <main className="flex w-full max-w-3xl min-w-0 flex-col items-center gap-6 px-4 py-10 text-center sm:gap-8 sm:px-6 sm:py-16">
-        <div className="flex flex-col items-center gap-3 sm:gap-4">
+        <div className="flex w-full flex-col items-center gap-3 sm:gap-4">
           <h1 className="font-claude text-3xl font-bold tracking-tight text-fd-foreground sm:text-5xl">
             <BrandName />
           </h1>
@@ -31,7 +31,7 @@ export default async function Home() {
         </div>
 
 
-        <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+        <div className="flex w-full flex-col items-center gap-4 sm:flex-row sm:justify-center">
           <Link
             href="/docs"
             className="group inline-flex h-11 w-[200px] items-center justify-center gap-1 whitespace-nowrap rounded-md bg-fd-primary px-6 text-sm font-medium text-fd-primary-foreground transition-all hover:bg-fd-primary/90"

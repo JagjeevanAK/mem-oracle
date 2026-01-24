@@ -10,6 +10,12 @@
   --fd-layout-offset: 0px;
 }
 
+html,
+body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 .shell-prompt pre code::before,
 .shell-prompt code::before {
   content: "$";
@@ -29,14 +35,18 @@
   padding-left: 8px;
   padding-right: 8px;
   display: block;
-  width: 100%;
-  word-break: break-word;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 .shell-prompt span.line {
   padding-left: 0;
   padding-right: 0;
+}
+
+.shell-prompt figure {
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
 }
 
 @media (min-width: 640px) {
