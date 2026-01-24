@@ -25,10 +25,20 @@ body {
   opacity: 0.6;
 }
 
-.shell-prompt pre {
+.shell-prompt pre,
+.shell-prompt .fd-scroll-container {
   min-width: 0 !important;
   width: 100% !important;
   overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.shell-prompt pre::-webkit-scrollbar,
+.shell-prompt .fd-scroll-container::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .shell-prompt pre code {
