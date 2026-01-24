@@ -47,6 +47,31 @@ body {
   max-width: 100%;
   margin-left: 0;
   margin-right: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.shell-prompt figure > div:first-child {
+  width: 100%;
+  min-width: 0;
+  padding-right: 12px;
+}
+
+.shell-prompt figure figcaption {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-prompt figure > div:first-child button {
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.shell-prompt figure > div[role="region"] {
+  max-width: 100%;
+  min-width: 0;
 }
 
 @media (min-width: 640px) {

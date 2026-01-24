@@ -66,9 +66,9 @@ export default async function Home() {
           </Link>
         </div>
 
-        <div className="mt-6 w-full max-w-full text-left shell-prompt sm:mt-8 sm:max-w-xl">
-          <div className="relative grid gap-3 sm:gap-4 [--step-gap:0.75rem] sm:[--step-gap:1rem]">
-            <div className="relative pl-0 sm:pl-12">
+        <div className="mt-6 w-full max-w-full min-w-0 text-left shell-prompt sm:mt-8 sm:max-w-xl">
+          <div className="relative grid gap-3 sm:gap-4 [--step-gap:0.75rem] sm:[--step-gap:1rem] min-w-0">
+            <div className="relative pl-0 sm:pl-12 min-w-0">
               <div
                 aria-hidden="true"
                 className="absolute left-[20px] top-1/2 hidden h-[calc(100%+var(--step-gap))] w-px sm:block"
@@ -83,7 +83,7 @@ export default async function Home() {
                 <Pre>{marketplaceCode}</Pre>
               </CodeBlock>
             </div>
-            <div className="relative pl-0 sm:pl-12">
+            <div className="relative pl-0 sm:pl-12 min-w-0">
               <div className="absolute left-[7px] top-1/2 z-10 hidden h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-white bg-fd-background text-xs font-semibold leading-none text-fd-foreground sm:flex">
                 2
               </div>
