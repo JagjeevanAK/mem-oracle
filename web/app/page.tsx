@@ -53,7 +53,7 @@ export default async function Home() {
             href="https://github.com/jagjeevanak/mem-oracle"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-11 w-[200px] items-center justify-center gap-2 whitespace-nowrap rounded-md border border-fd-border px-6 text-sm font-medium text-fd-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground"
+            className="inline-flex h-11 w-[200px] items-center justify-center gap-2 whitespace-nowrap rounded-md bg-black px-6 text-sm font-medium text-white transition-colors hover:bg-black/90"
           >
             <svg
               viewBox="0 0 24 24"
