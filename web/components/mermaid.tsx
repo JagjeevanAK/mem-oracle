@@ -43,14 +43,15 @@ export function Mermaid({ chart }: { chart: string }) {
           theme: resolvedTheme === 'dark' ? 'dark' : 'default',
         });
 
-        let { svg, bindFunctions } = await mermaid.render(
+        const { svg: rawSvg, bindFunctions } = await mermaid.render(
           `${idRef.current}-${resolvedTheme}-${Date.now()}`,
           chart.replaceAll('\\n', '\n'),
         );
 
         // Fix dark mode text colors by post-processing SVG
+        let svg = rawSvg;
         if (resolvedTheme === 'dark') {
-          svg = svg
+          svg = rawSvg
             .replace(/fill="#000000"/g, 'fill="#e0e0e0"')
             .replace(/fill="#000"/g, 'fill="#e0e0e0"')
             .replace(/fill="black"/g, 'fill="#e0e0e0"')
@@ -80,7 +81,7 @@ export function Mermaid({ chart }: { chart: string }) {
   return (
     <div
       ref={containerRef}
-      className="my-6 flex justify-center overflow-x-auto [&_text]:dark:!fill-gray-200 [&_.messageText]:dark:!fill-gray-200 [&_.loopText]:dark:!fill-gray-200 [&_.labelText]:dark:!fill-gray-200"
+      className="my-6 flex justify-center overflow-x-auto [&_text]:dark:fill-gray-200! [&_.messageText]:dark:fill-gray-200! [&_.loopText]:dark:fill-gray-200! [&_.labelText]:dark:fill-gray-200!"
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
