@@ -1,4 +1,4 @@
-# mem-oracle
+# Mem-Oracle
 
 #### Local documentation oracle that indexes web docs and injects relevant context into Claude Code sessions.
 
@@ -7,7 +7,6 @@
 
 [Quick Start](#quick-start) • [Documentation](https://mem-oracle.dev/docs) • [License](#license)
 
----
 
 ## Quick Start
 
@@ -29,7 +28,6 @@ Restart Claude Code. That's it!
 - **Pluggable Embeddings** - Local TF-IDF, OpenAI, Voyage, or Cohere
 - **MCP Server** - Explicit tool calls for search/index operations
 
----
 
 ## Documentation
 
@@ -44,12 +42,8 @@ Full documentation available at **[mem-oracle.dev/docs](https://mem-oracle.dev/d
 - [Architecture](https://mem-oracle.dev/docs/architecture)
 - [Troubleshooting](https://mem-oracle.dev/docs/troubleshooting)
 
----
 
 ## License
 
 MIT - See [LICENSE](LICENSE) for details.
 
----
-
-**Built with Bun** | **Powered by Claude Code** | [GitHub](https://github.com/jagjeevanak/mem-oracle)
