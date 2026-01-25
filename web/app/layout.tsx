@@ -23,6 +23,12 @@ const claude = localFont({
 export const metadata: Metadata = {
   title: "Mem-Oracle",
   description: "A locally-running documentation oracle that indexes web docs and injects relevant snippets into your coding context.",
+  icons: {
+    icon: [
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon.ico", sizes: "32x32", type: "image/png" },
+    ],
+  },
 };
 
 export default function RootLayout({
