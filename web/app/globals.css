@@ -135,3 +135,27 @@ body {
 a:has(.brand-name) {
   text-decoration-color: #f97316;
 }
+
+/* Mermaid dark mode text fixes */
+.dark svg text,
+.dark svg .messageText,
+.dark svg .loopText,
+.dark svg .noteText,
+.dark svg .labelText,
+.dark svg tspan {
+  fill: #e0e0e0 !important;
+}
+
+.dark svg .messageLine0,
+.dark svg .messageLine1,
+.dark svg line[class*="message"] {
+  stroke: #a0a0a0 !important;
+}
+
+.dark svg .actor-line {
+  stroke: #666 !important;
+}
+
+.dark svg marker path {
+  fill: #a0a0a0 !important;
+}
