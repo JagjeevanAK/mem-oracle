@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-1.5.8-green.svg)](package.json)
 
-[Quick Start](#quick-start) • [Documentation](https://mem-oracle.dev/docs) • [License](#license)
+[Quick Start](#quick-start) • [Documentation](https://mem-oracle.vercel.app/docs) • [License](#license)
 
 
 ## Quick Start
@@ -31,16 +31,16 @@ Restart Claude Code. That's it!
 
 ## Documentation
 
-Full documentation available at **[mem-oracle.dev/docs](https://mem-oracle.dev/docs)**
+Full documentation available at **[mem-oracle.vercel.app/docs](https://mem-oracle.vercel.app/docs)**
 
-- [Getting Started](https://mem-oracle.dev/docs/getting-started)
-- [Installation](https://mem-oracle.dev/docs/installation)
-- [Configuration](https://mem-oracle.dev/docs/configuration)
-- [CLI Reference](https://mem-oracle.dev/docs/cli)
-- [API Reference](https://mem-oracle.dev/docs/api)
-- [MCP Server](https://mem-oracle.dev/docs/mcp)
-- [Architecture](https://mem-oracle.dev/docs/architecture)
-- [Troubleshooting](https://mem-oracle.dev/docs/troubleshooting)
+- [Getting Started](https://mem-oracle.vercel.app/docs/getting-started)
+- [Installation](https://mem-oracle.vercel.app/docs/installation)
+- [Configuration](https://mem-oracle.vercel.app/docs/configuration)
+- [CLI Reference](https://mem-oracle.vercel.app/docs/cli)
+- [API Reference](https://mem-oracle.vercel.app/docs/api)
+- [MCP Server](https://mem-oracle.vercel.app/docs/mcp)
+- [Architecture](https://mem-oracle.vercel.app/docs/architecture)
+- [Troubleshooting](https://mem-oracle.vercel.app/docs/troubleshooting)
 
 
 ## License
