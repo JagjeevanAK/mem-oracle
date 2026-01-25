@@ -22,7 +22,14 @@ http://127.0.0.1:7432
 | `POST` | `/index` | Index a documentation site |
 | `POST` | `/retrieve` | Search for relevant snippets |
 | `GET` | `/status` | Get indexing status |
+| `POST` | `/refresh` | Refresh a docset (by id or baseUrl) |
+| `POST` | `/refresh-all` | Refresh all docsets |
+| `GET` | `/docset/:id` | Get a docset and its index status |
+| `GET` | `/docset/:id/pages` | List pages in a docset |
 | `DELETE` | `/docset/:id` | Delete a docset |
+| `POST` | `/session/register` | Register a client session |
+| `POST` | `/session/unregister` | Unregister a client session |
+| `GET` | `/sessions` | List active sessions |
 | `GET` | `/health` | Health check |
 
 ---
@@ -38,6 +45,7 @@ Index a documentation website.
   "baseUrl": "https://nextjs.org",
   "seedSlug": "/docs/getting-started",
   "name": "Next.js Docs",
+  "allowedPaths": ["/docs"],
   "waitForSeed": true
 }
 ```
@@ -49,6 +57,7 @@ Index a documentation website.
 | `baseUrl` | string | Yes | Base URL of the documentation site |
 | `seedSlug` | string | Yes | Starting path to begin crawling |
 | `name` | string | No | Custom name for the docset |
+| `allowedPaths` | string[] | No | Allowed path prefixes to crawl |
 | `waitForSeed` | boolean | No | Wait for seed page to be indexed before returning |
 
 ### Response
@@ -57,8 +66,7 @@ Index a documentation website.
 {
   "docsetId": "abc123",
   "status": "indexing",
-  "seedPageIndexed": true,
-  "message": "Indexing started. Background crawling in progress."
+  "seedIndexed": true
 }
 ```
 
@@ -206,6 +214,13 @@ curl -X POST http://localhost:7432/retrieve \
 
 Get the status of all indexed documentation.
 
+### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `docsetId` | string | Filter to a specific docset |
+| `includeStuck` | boolean | Include `stuckPages` details |
+
 ### Response
 
 ```json title="Response"
@@ -215,18 +230,25 @@ Get the status of all indexed documentation.
       "id": "abc123",
       "name": "Next.js Docs",
       "baseUrl": "https://nextjs.org",
-      "status": "complete",
-      "pages": {
-        "indexed": 245,
-        "pending": 0,
-        "failed": 2
-      },
-      "lastUpdated": "2024-01-15T10:30:00Z",
-      "createdAt": "2024-01-15T09:00:00Z"
+      "seedSlug": "/docs/getting-started",
+      "allowedPaths": ["/docs"],
+      "createdAt": 1705318800000,
+      "updatedAt": 1705320600000,
+      "status": "ready",
+      "indexStatus": {
+        "docsetId": "abc123",
+        "totalPages": 245,
+        "indexedPages": 245,
+        "pendingPages": 0,
+        "errorPages": 0,
+        "skippedPages": 0,
+        "totalChunks": 4120,
+        "status": "ready",
+        "stuckPages": 0,
+        "retriedPages": 0
+      }
     }
-  ],
-  "totalDocsets": 1,
-  "totalPages": 245
+  ]
 }
 ```
 
@@ -234,6 +256,154 @@ Get the status of all indexed documentation.
 
 ```bash title="Terminal"
 curl http://localhost:7432/status
+```
+
+---
+
+## POST /refresh
+
+Refresh a specific docset by `docsetId` or `baseUrl`.
+
+### Request
+
+```json title="Request Body"
+{
+  "docsetId": "abc123",
+  "force": false,
+  "maxAge": 24,
+  "fullReindex": false
+}
+```
+
+### Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `docsetId` | string | No | Docset ID to refresh |
+| `baseUrl` | string | No | Docset base URL to refresh |
+| `force` | boolean | No | Refresh even if docset is fresh |
+| `maxAge` | number | No | Max age in hours before refresh is needed |
+| `fullReindex` | boolean | No | Clear hashes and re-embed all pages |
+
+### Response
+
+```json title="Response"
+{
+  "docsetId": "abc123",
+  "status": "pending",
+  "refreshed": true,
+  "message": "Refreshing 245 pages from Next.js Docs (incremental mode)",
+  "incremental": {
+    "preservedHashes": 240,
+    "clearedHashes": 5
+  }
+}
+```
+
+---
+
+## POST /refresh-all
+
+Refresh all docsets that are stale (or all, if `force` is true).
+
+### Request
+
+```json title="Request Body"
+{
+  "force": false,
+  "maxAge": 24,
+  "fullReindex": false
+}
+```
+
+### Response
+
+```json title="Response"
+{
+  "total": 2,
+  "refreshed": 1,
+  "results": [
+    {
+      "docsetId": "abc123",
+      "status": "pending",
+      "refreshed": true,
+      "message": "Queued 245 pages for refresh (incremental)",
+      "incremental": {
+        "preservedHashes": 240,
+        "clearedHashes": 5
+      }
+    }
+  ]
+}
+```
+
+---
+
+## GET /docset/:id
+
+Get a single docset and its index status.
+
+### Response
+
+```json title="Response"
+{
+  "id": "abc123",
+  "name": "Next.js Docs",
+  "baseUrl": "https://nextjs.org",
+  "seedSlug": "/docs/getting-started",
+  "allowedPaths": ["/docs"],
+  "createdAt": 1705318800000,
+  "updatedAt": 1705320600000,
+  "status": "ready",
+  "indexStatus": {
+    "docsetId": "abc123",
+    "totalPages": 245,
+    "indexedPages": 245,
+    "pendingPages": 0,
+    "errorPages": 0,
+    "skippedPages": 0,
+    "totalChunks": 4120,
+    "status": "ready",
+    "stuckPages": 0,
+    "retriedPages": 0
+  }
+}
+```
+
+---
+
+## GET /docset/:id/pages
+
+List pages in a docset with pagination.
+
+### Query Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `status` | string | Filter by page status |
+| `limit` | number | Max pages to return (default: 100, max: 500) |
+| `offset` | number | Offset for pagination (default: 0) |
+
+### Response
+
+```json title="Response"
+{
+  "pages": [
+    {
+      "id": "page-123",
+      "url": "https://nextjs.org/docs/app",
+      "path": "/docs/app",
+      "title": "App Router",
+      "status": "indexed",
+      "errorMessage": null,
+      "fetchedAt": 1705320400000,
+      "indexedAt": 1705320410000
+    }
+  ],
+  "total": 245,
+  "limit": 100,
+  "offset": 0
+}
 ```
 
 ---
@@ -253,8 +423,7 @@ Delete a docset and all its indexed content.
 ```json title="Response"
 {
   "success": true,
-  "message": "Docset deleted successfully",
-  "deletedPages": 245
+  "docsetId": "abc123"
 }
 ```
 
@@ -262,6 +431,83 @@ Delete a docset and all its indexed content.
 
 ```bash title="Terminal"
 curl -X DELETE http://localhost:7432/docset/abc123
+```
+
+---
+
+## POST /session/register
+
+Register a client session (used by editor plugins).
+
+### Request
+
+```json title="Request Body"
+{
+  "sessionId": "session-123",
+  "clientType": "claude-code"
+}
+```
+
+### Response
+
+```json title="Response"
+{
+  "success": true,
+  "session": {
+    "id": "session-123",
+    "clientType": "claude-code",
+    "connectedAt": 1705320400000,
+    "lastHeartbeat": 1705320400000
+  },
+  "totalSessions": 1
+}
+```
+
+---
+
+## POST /session/unregister
+
+Unregister a client session.
+
+### Request
+
+```json title="Request Body"
+{
+  "sessionId": "session-123"
+}
+```
+
+### Response
+
+```json title="Response"
+{
+  "success": true,
+  "existed": true,
+  "remainingSessions": 0,
+  "shouldStop": true
+}
+```
+
+---
+
+## GET /sessions
+
+List active sessions.
+
+### Response
+
+```json title="Response"
+{
+  "sessions": [
+    {
+      "id": "session-123",
+      "clientType": "claude-code",
+      "connectedAt": 1705320400000,
+      "lastHeartbeat": 1705320400000
+    }
+  ],
+  "count": 1
+}
 ```
 
 ---
@@ -275,8 +521,8 @@ Health check endpoint.
 ```json title="Response"
 {
   "status": "ok",
-  "uptime": 3600,
-  "version": "1.0.0"
+  "timestamp": 1705320400000,
+  "version": "1.4.0"
 }
 ```
 
@@ -294,17 +540,6 @@ All endpoints return errors in this format:
 
 ```json title="Error Response"
 {
-  "error": "Error message here",
-  "code": "ERROR_CODE",
-  "details": {}
+  "error": "Error message here"
 }
 ```
-
-### Common Error Codes
-
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `INVALID_REQUEST` | 400 | Invalid request parameters |
-| `NOT_FOUND` | 404 | Resource not found |
-| `ALREADY_EXISTS` | 409 | Docset already being indexed |
-| `INTERNAL_ERROR` | 500 | Internal server error |

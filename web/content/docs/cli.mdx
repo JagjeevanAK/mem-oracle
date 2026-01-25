@@ -10,12 +10,15 @@ mem-oracle provides a comprehensive CLI for managing documentation indexing.
 ## Commands Overview
 
 ```bash title="Usage"
-bun run src/index.ts <command> [options]
+mem-oracle <command>
 ```
+
+If you're running from source, replace `mem-oracle` with `bun run src/index.ts`.
 
 | Command | Description |
 |---------|-------------|
 | `worker` | Start the worker HTTP service |
+| `serve` | Alias for `worker` |
 | `mcp` | Start the MCP server (stdio) |
 | `index` | Index a documentation URL |
 | `search` | Search indexed documentation |
@@ -28,24 +31,14 @@ bun run src/index.ts <command> [options]
 Start the worker HTTP service that handles indexing and retrieval.
 
 ```bash title="Terminal"
-bun run src/index.ts worker
+mem-oracle worker
 ```
-
-### Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--port` | `7432` | Port to listen on |
-| `--host` | `127.0.0.1` | Host to bind to |
 
 ### Example
 
 ```bash title="Terminal"
 # Start on default port
-bun run src/index.ts worker
-
-# Start on custom port
-bun run src/index.ts worker --port 8080
+mem-oracle worker
 ```
 
 ---
@@ -55,7 +48,7 @@ bun run src/index.ts worker --port 8080
 Start the MCP (Model Context Protocol) server for explicit tool calls.
 
 ```bash title="Terminal"
-bun run src/index.ts mcp
+mem-oracle mcp
 ```
 
 This starts an MCP server using stdio for communication. Use this with Claude Code's MCP configuration.
@@ -67,7 +60,7 @@ This starts an MCP server using stdio for communication. Use this with Claude Co
 Index a documentation website.
 
 ```bash title="Terminal"
-bun run src/index.ts index <url>
+mem-oracle index <url>
 ```
 
 ### Arguments
@@ -76,25 +69,11 @@ bun run src/index.ts index <url>
 |----------|----------|-------------|
 | `url` | Yes | The documentation URL to index |
 
-### Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--name` | Auto | Custom name for the docset |
-| `--max-pages` | `1000` | Maximum pages to crawl |
-| `--concurrency` | `3` | Number of concurrent requests |
-
 ### Examples
 
 ```bash title="Terminal"
 # Index Next.js docs
-bun run src/index.ts index https://nextjs.org/docs/getting-started
-
-# Index with custom name
-bun run src/index.ts index https://react.dev/learn --name "React Docs"
-
-# Limit crawl depth
-bun run src/index.ts index https://docs.python.org/3/ --max-pages 500
+mem-oracle index https://nextjs.org/docs/getting-started
 ```
 
 ---
@@ -104,7 +83,7 @@ bun run src/index.ts index https://docs.python.org/3/ --max-pages 500
 Search through indexed documentation.
 
 ```bash title="Terminal"
-bun run src/index.ts search <query>
+mem-oracle search <query>
 ```
 
 ### Arguments
@@ -113,24 +92,11 @@ bun run src/index.ts search <query>
 |----------|----------|-------------|
 | `query` | Yes | The search query |
 
-### Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--top-k` | `5` | Number of results to return |
-| `--min-score` | `0.5` | Minimum similarity score |
-
 ### Examples
 
 ```bash title="Terminal"
 # Basic search
-bun run src/index.ts search "how to use server components"
-
-# Get more results
-bun run src/index.ts search "authentication" --top-k 10
-
-# Higher quality threshold
-bun run src/index.ts search "routing" --min-score 0.7
+mem-oracle search "how to use server components"
 ```
 
 ---
@@ -140,20 +106,18 @@ bun run src/index.ts search "routing" --min-score 0.7
 Show the status of indexed documentation.
 
 ```bash title="Terminal"
-bun run src/index.ts status
+mem-oracle status
 ```
 
 ### Output
 
 ```text title="Output"
-Docsets:
-  - Next.js Docs (nextjs.org)
-    Pages: 245 indexed, 12 pending, 0 failed
-    Last updated: 2024-01-15 10:30:00
-    
-  - React Docs (react.dev)
-    Pages: 89 indexed, 0 pending, 0 failed
-    Last updated: 2024-01-14 15:45:00
+Next.js Docs (https://nextjs.org)
+  ID: abc123
+  Status: ready
+  Pages: 245/245 indexed
+  Pending: 0, Errors: 0, Skipped: 0
+  Chunks: 4120
 ```
 
 ---
