@@ -79,6 +79,7 @@ curl -X POST http://localhost:7432/index \
     "baseUrl": "https://nextjs.org",
     "seedSlug": "/docs/getting-started",
     "name": "Next.js Docs",
+    "allowedPaths": ["/docs"],
     "waitForSeed": true
   }'
 ```
@@ -251,6 +252,8 @@ Get the status of all indexed documentation.
   ]
 }
 ```
+
+`stuckPages` is included when `includeStuck=true` or when stuck pages exist.
 
 ### Example
 

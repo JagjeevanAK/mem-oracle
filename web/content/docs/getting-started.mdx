@@ -12,7 +12,6 @@ Get mem-oracle up and running in your development environment in just a few minu
 Before you begin, make sure you have:
 
 - **Bun** runtime installed ([install Bun](https://bun.sh))
-- **Node.js** 18.0.0 or higher
 - **Claude Code** or **OpenCode** with plugin support (for automatic integration)
 
 ## Quick Start
@@ -53,20 +52,22 @@ Add to your Claude Code MCP configuration:
 {
   "mcpServers": {
     "mem-oracle": {
-      "command": "bun",
-      "args": ["run", "/path/to/mem-oracle/src/index.ts", "mcp"]
+      "command": "mem-oracle",
+      "args": ["mcp"]
     }
   }
 }
 ```
+If you're running from source, use `bun run /path/to/mem-oracle/src/index.ts mcp`.
 
 ## Your First Index
 
 Once the worker is running, index your first documentation:
+If you're running from source, replace `mem-oracle` with `bun run src/index.ts`.
 
 ```bash title="Terminal"
 # Index Next.js docs
-bun run src/index.ts index https://nextjs.org/docs/getting-started
+mem-oracle index https://nextjs.org/docs/getting-started
 
 # Or via HTTP API
 curl -X POST http://localhost:7432/index \
@@ -80,7 +81,7 @@ Search your indexed documentation:
 
 ```bash title="Terminal"
 # Via CLI
-bun run src/index.ts search "how to use server components"
+mem-oracle search "how to use server components"
 
 # Via HTTP API
 curl -X POST http://localhost:7432/retrieve \
@@ -94,7 +95,7 @@ View the status of your indexed documentation:
 
 ```bash title="Terminal"
 # Via CLI
-bun run src/index.ts status
+mem-oracle status
 
 # Via HTTP API
 curl http://localhost:7432/status

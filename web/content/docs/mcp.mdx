@@ -10,10 +10,11 @@ mem-oracle can run as an MCP (Model Context Protocol) server, providing explicit
 ## Starting the MCP Server
 
 ```bash title="Terminal"
-bun run src/index.ts mcp
+mem-oracle mcp
 ```
 
 The server uses stdio for communication, making it compatible with Claude Code and other MCP-enabled tools.
+If you're running from source, use `bun run src/index.ts mcp`.
 
 ## Configuration
 
@@ -23,8 +24,8 @@ Add to your Claude Code MCP configuration (`.mcp.json` or settings):
 {
   "mcpServers": {
     "mem-oracle": {
-      "command": "bun",
-      "args": ["run", "/path/to/mem-oracle/src/index.ts", "mcp"]
+      "command": "mem-oracle",
+      "args": ["mcp"]
     }
   }
 }
@@ -43,8 +44,8 @@ Search through indexed documentation.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `query` | string | Yes | The search query |
-| `topK` | number | No | Number of results (default: 5) |
-| `minScore` | number | No | Minimum similarity score (default: 0.5) |
+| `top_k` | number | No | Number of results (default: 5) |
+| `docset_ids` | string[] | No | Docset IDs to filter by |
 
 #### Example Usage
 
@@ -70,7 +71,7 @@ Get specific documentation chunks by ID.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `chunkIds` | string[] | Yes | Array of chunk IDs to retrieve |
+| `chunk_ids` | string[] | Yes | Array of chunk IDs to retrieve |
 
 #### Example Usage
 
@@ -88,9 +89,10 @@ Index a documentation website.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `url` | string | Yes | Full URL to index |
+| `base_url` | string | Yes | Base URL to index |
+| `seed_slug` | string | Yes | Starting path to crawl |
 | `name` | string | No | Custom name for the docset |
-| `waitForSeed` | boolean | No | Wait for seed page (default: true) |
+| `wait_for_seed` | boolean | No | Wait for seed page (default: true) |
 
 #### Example Usage
 

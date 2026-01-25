@@ -18,7 +18,8 @@ mem-oracle is highly configurable to suit your needs. Configuration is stored in
     "batchSize": 32
   },
   "vectorStore": {
-    "provider": "local"
+    "provider": "local",
+    "collectionPrefix": "mem-oracle"
   },
   "worker": {
     "port": 7432,
@@ -28,7 +29,8 @@ mem-oracle is highly configurable to suit your needs. Configuration is stored in
     "concurrency": 3,
     "requestDelay": 500,
     "timeout": 30000,
-    "maxPages": 1000
+    "maxPages": 1000,
+    "userAgent": "mem-oracle/1.0 (docs indexer)"
   },
   "hybrid": {
     "enabled": true,
@@ -132,6 +134,26 @@ Uses TF-IDF for embeddings. No API key required.
 
 ---
 
+### Vector Store Settings
+
+```json title="Vector Store"
+{
+  "vectorStore": {
+    "provider": "local",
+    "collectionPrefix": "mem-oracle"
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `provider` | `local` | Vector store provider (`local`, `qdrant`, `pinecone`) |
+| `url` | - | Remote vector store URL |
+| `apiKey` | - | API key for remote provider |
+| `collectionPrefix` | `mem-oracle` | Collection/index name prefix |
+
+---
+
 ### Worker Settings
 
 ```json title="Worker Config"
@@ -158,7 +180,8 @@ Uses TF-IDF for embeddings. No API key required.
     "concurrency": 3,
     "requestDelay": 500,
     "timeout": 30000,
-    "maxPages": 1000
+    "maxPages": 1000,
+    "userAgent": "mem-oracle/1.0 (docs indexer)"
   }
 }
 ```
@@ -169,6 +192,7 @@ Uses TF-IDF for embeddings. No API key required.
 | `requestDelay` | `500` | Delay between requests (ms) |
 | `timeout` | `30000` | Request timeout (ms) |
 | `maxPages` | `1000` | Maximum pages per docset |
+| `userAgent` | `mem-oracle/1.0 (docs indexer)` | User agent string for crawler requests |
 
 ---
 
@@ -250,10 +274,11 @@ You can also configure via environment variables:
 |----------|-------------|
 | `MEM_ORACLE_PORT` | Worker service port |
 | `MEM_ORACLE_DATA_DIR` | Data storage directory |
-| `MEM_ORACLE_TOP_K` | Default number of results |
-| `MEM_ORACLE_AUTO_INDEX` | Auto-index detected URLs |
-| `MEM_ORACLE_MAX_CHUNKS_PER_PAGE` | Max chunks per page (diversity) |
-| `MEM_ORACLE_MAX_TOTAL_CHARS` | Total character budget |
+| `MEM_ORACLE_WORKER_URL` | Override worker URL for plugin hooks |
+| `MEM_ORACLE_IDLE_CHECK_MS` | Idle shutdown check interval (ms) |
+| `MEM_ORACLE_REPO_ROOT` | Override repo path for plugin scripts |
+| `MEM_ORACLE_TOP_K` | Default number of results (OpenCode plugin) |
+| `MEM_ORACLE_AUTO_INDEX` | Auto-index detected URLs (OpenCode plugin) |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `VOYAGE_API_KEY` | Voyage AI API key |
 | `COHERE_API_KEY` | Cohere API key |
@@ -262,16 +287,9 @@ You can also configure via environment variables:
 
 ## Plugin Configuration
 
-### Claude Code Plugin Settings
+### Claude Code Plugin
 
-Settings are configured via the plugin manifest:
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `worker_port` | `7432` | Worker service port |
-| `top_k` | `5` | Number of snippets to retrieve |
-| `auto_index` | `true` | Auto-index detected doc URLs |
-| `min_score` | `0.5` | Minimum similarity score |
+The Claude Code hooks read the worker URL from `MEM_ORACLE_WORKER_URL` (defaults to `http://127.0.0.1:7432`).
 
 ### OpenCode Plugin Environment
 

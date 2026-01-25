@@ -27,7 +27,7 @@ kill $(cat ~/.mem-oracle/worker.pid)
 
 3. Start with a different port:
 ```bash title="Terminal"
-bun run src/index.ts worker --port 8080
+MEM_ORACLE_PORT=8080 bun run worker
 ```
 
 ### Worker Not Responding
@@ -75,9 +75,9 @@ curl -I https://example.com/docs
 
 3. Force re-index:
 ```bash title="Terminal"
-curl -X POST http://localhost:7432/index \
+curl -X POST http://localhost:7432/refresh \
   -H "Content-Type: application/json" \
-  -d '{"baseUrl": "https://example.com", "seedSlug": "/docs", "force": true}'
+  -d '{"baseUrl": "https://example.com", "force": true}'
 ```
 
 ### Pages Failing to Index
@@ -102,7 +102,7 @@ curl -X POST http://localhost:7432/index \
 
 2. Check failed pages:
 ```bash title="Terminal"
-curl http://localhost:7432/status | jq '.docsets[].pages.failed'
+curl http://localhost:7432/status | jq '.docsets[].indexStatus.errorPages'
 ```
 
 ### Content Not Extracted
@@ -130,11 +130,11 @@ curl http://localhost:7432/status | jq '.docsets[].pages.failed'
 curl http://localhost:7432/status
 ```
 
-2. Try a broader query with lower score threshold:
+2. Try a broader query with a higher topK:
 ```bash title="Terminal"
 curl -X POST http://localhost:7432/retrieve \
   -H "Content-Type: application/json" \
-  -d '{"query": "getting started", "topK": 10, "minScore": 0.3}'
+  -d '{"query": "getting started", "topK": 10}'
 ```
 
 3. Check if the query matches indexed content topics.
